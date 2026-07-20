@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import api from '../api';
 
-function ATSScorer() {
+function ATSScorer({ onScanComplete }) {
   const [jobDescription, setJobDescription] = useState('');
   const [jobUrl, setJobUrl] = useState('');
+  const [company, setCompany] = useState('');
+  const [position, setPosition] = useState('');
   const [scraping, setScraping] = useState(false);
   const [scraped, setScraped] = useState(false);
   const [file, setFile] = useState(null);
@@ -56,12 +58,40 @@ function ATSScorer() {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       setResults(data);
+      if (onScanComplete) {
+        const rs = data.recruiterScreen || {};
+        const allKws = [...(data.matchedKeywords || []), ...(data.demonstratedMissing || []), ...(data.missingKeywords || [])];
+        onScanComplete({
+          jobDescription,
+          company,
+          position,
+          score: data.score,                          // strict / original ATS
+          demonstratedScore: data.demonstratedScore,  // literal + implied
+          demonstratedMissing: data.demonstratedMissing || [], // proven but keyword absent
+          missingRequired: data.requiredMissing || [],
+          missingPreferred: (data.missingKeywords || []).filter(k => k.priority === 'preferred'),
+          softSkills: allKws.filter(k => k.category === 'softSkills').map(k => k.keyword),
+          // Aggressively cut anything that doesn't add value for this JD:
+          //   • audit lines marked "remove" OR with no relevance to the role
+          //   • the recruiter's explicit "delete these" quick-cuts
+          linesToRemove: Array.from(new Set([
+            ...(rs.lineByLineAudit || [])
+              .filter(l => l.verdict === 'remove' || l.relevance === 'none')
+              .map(l => l.line),
+            ...(rs.removeToSaveSpace || [])
+          ].filter(Boolean))),
+          // Individual skills to strip out of the skills line (irrelevant to this role)
+          skillsToRemove: (rs.irrelevantSkills || []).map(s => s.skill || s).filter(Boolean),
+          grammarFixes: rs.grammarErrors || []
+        });
+      }
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to analyze resume');
     } finally {
       setLoading(false);
     }
   };
+
 
   const getScoreClass = (score) => {
     if (score >= 70) return 'score-high';
@@ -94,6 +124,17 @@ function ATSScorer() {
       <div className="ats-container">
         <div className="ats-input">
           <form onSubmit={handleScore}>
+            <div style={{ display: 'flex', gap: 12, marginBottom: 0 }}>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label>Company</label>
+                <input type="text" value={company} onChange={(e) => setCompany(e.target.value)} placeholder="e.g. Google" />
+              </div>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label>Position</label>
+                <input type="text" value={position} onChange={(e) => setPosition(e.target.value)} placeholder="e.g. Software Engineer" />
+              </div>
+            </div>
+
             <div className="form-group">
               <label>Job Posting URL</label>
               <div style={{ display: 'flex', gap: 8 }}>
@@ -241,14 +282,36 @@ function ATSScorer() {
                     </div>
                   </div>
 
-                  <div className={`score-circle ${getScoreClass(results.score)}`}>
-                    {results.score}%
+                  {/* Two scores, always shown side by side */}
+                  <div style={{ display: 'flex', gap: 14, justifyContent: 'center', alignItems: 'stretch', marginBottom: 10, flexWrap: 'wrap' }}>
+                    <div style={{
+                      flex: '1 1 180px', maxWidth: 240, textAlign: 'center',
+                      border: '2px solid #e5e7eb', borderRadius: 12, padding: '14px 12px'
+                    }}>
+                      <div style={{ fontSize: '2.2rem', fontWeight: 800, color: getScoreBarColor(results.score / 20) }}>
+                        {results.score}%
+                      </div>
+                      <div style={{ fontWeight: 700, color: '#1a1a2e', fontSize: '0.9rem' }}>Original ATS Score</div>
+                      <div style={{ fontSize: '0.72rem', color: '#888', marginTop: 4, lineHeight: 1.4 }}>
+                        Pure Workday / Greenhouse — <strong>literal keyword match only</strong>. No inference.
+                      </div>
+                    </div>
+                    <div style={{
+                      flex: '1 1 180px', maxWidth: 240, textAlign: 'center',
+                      border: '2px solid #a5f3fc', background: '#ecfeff', borderRadius: 12, padding: '14px 12px'
+                    }}>
+                      <div style={{ fontSize: '2.2rem', fontWeight: 800, color: '#0e7490' }}>
+                        {typeof results.demonstratedScore === 'number' ? results.demonstratedScore : results.score}%
+                      </div>
+                      <div style={{ fontWeight: 700, color: '#0e7490', fontSize: '0.9rem' }}>Demonstrated Score</div>
+                      <div style={{ fontSize: '0.72rem', color: '#155e63', marginTop: 4, lineHeight: 1.4 }}>
+                        Includes skills you <strong>prove</strong> through action words a recruiter would credit.
+                      </div>
+                    </div>
                   </div>
-                  <p style={{ textAlign: 'center', color: '#666', marginBottom: 6 }}>
-                    Weighted ATS Score
-                  </p>
+
                   <p style={{ textAlign: 'center', color: '#999', fontSize: '0.8rem', marginBottom: 20 }}>
-                    {results.matchedKeywords.length} of {results.totalKeywords} keywords matched
+                    {results.matchedKeywords.length} of {results.totalKeywords} keywords matched literally
                     {results.requiredMissing?.length > 0 && (
                       <span style={{ color: '#dc2626', fontWeight: 500 }}>
                         {' '}· {results.requiredMissing.length} required missing
@@ -271,7 +334,7 @@ function ATSScorer() {
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: 3 }}>
                               <span style={{ fontWeight: 500 }}>{labels[cat] || cat}</span>
                               <span style={{ color: '#666' }}>
-                                {data.matched.length}/{data.matched.length + data.missing.length} · {data.percentage}%
+                                {data.matched.length}/{data.matched.length + (data.demonstrated?.length || 0) + data.missing.length} · {data.percentage}%
                               </span>
                             </div>
                             <div style={{ background: '#e5e7eb', borderRadius: 4, height: 8, overflow: 'hidden' }}>
@@ -283,23 +346,66 @@ function ATSScorer() {
                     </div>
                   )}
 
-                  {/* Matched */}
+                  {/* Direct Matches — literal keyword hits the ATS actually credits */}
                   <div>
-                    <h4 style={{ marginBottom: 8, color: '#16a34a' }}>Matched ({results.matchedKeywords.length})</h4>
+                    <h4 style={{ marginBottom: 4, color: '#16a34a' }}>
+                      Direct Matches ({results.matchedKeywords.length})
+                    </h4>
+                    <p style={{ fontSize: '0.8rem', color: '#666', marginBottom: 8 }}>
+                      Tech stack, tools &amp; terms found <strong>verbatim</strong> in your resume — the only thing an original ATS counts.
+                    </p>
                     <div className="keywords-list">
                       {results.matchedKeywords.map((kw, i) => (
                         <span key={i} className="keyword-tag keyword-matched" title={
-                          `Category: ${kw.category || '?'} · Priority: ${kw.priority || '?'} · Found as: "${kw.matchedAs || kw.keyword || kw}" · ${kw.occurrences || 1}x`
+                          `Category: ${kw.category || '?'} · Priority: ${kw.priority || '?'} · Found as: "${kw.matchedAs || kw.keyword || kw}" · ${kw.occurrences || 1}x on resume`
                         }>
                           {kw.keyword || kw}
+                          {kw.occurrences > 1 && (
+                            <span style={{ marginLeft: 4, fontSize: '0.65rem', opacity: 0.7 }}>{kw.occurrences}×</span>
+                          )}
                           {kw.priority === 'required' && <span style={{ marginLeft: 4, fontSize: '0.65rem', opacity: 0.7 }}>REQ</span>}
                         </span>
                       ))}
                       {results.matchedKeywords.length === 0 && (
-                        <p style={{ color: '#999', fontSize: '0.85rem' }}>No keywords matched.</p>
+                        <p style={{ color: '#999', fontSize: '0.85rem' }}>No direct keyword matches.</p>
                       )}
                     </div>
                   </div>
+
+                  {/* Demonstrated but keyword missing — implied evidence a strict ATS won't credit */}
+                  {results.demonstratedMissing?.length > 0 && (
+                    <div style={{ marginTop: 20 }}>
+                      <h4 style={{ marginBottom: 4, color: '#d97706' }}>
+                        Demonstrated — but keyword missing ({results.demonstratedMissing.length})
+                      </h4>
+                      <p style={{ fontSize: '0.8rem', color: '#666', marginBottom: 8 }}>
+                        You <em>prove</em> these through action words, so a human recruiter credits them — but a strict ATS
+                        searches literally and <strong>won't</strong>. Add the exact keyword to be safe.
+                      </p>
+                      <div className="keywords-list" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {results.demonstratedMissing.map((kw, i) => (
+                          <div key={i} style={{
+                            display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6,
+                            padding: '6px 10px', background: '#fffbeb', borderRadius: 6,
+                            border: '1px solid #fde68a', fontSize: '0.85rem'
+                          }}>
+                            <span style={{ fontWeight: 600, color: '#92400e' }}>{kw.keyword || kw}</span>
+                            {kw.priority === 'required' && (
+                              <span style={{ fontSize: '0.65rem', color: '#b45309', fontWeight: 700 }}>REQ</span>
+                            )}
+                            <span style={{ color: '#a16207' }}>— demonstrated via</span>
+                            <span style={{
+                              fontStyle: 'italic', color: '#92400e', background: '#fef3c7',
+                              padding: '1px 6px', borderRadius: 4
+                            }}>
+                              "{kw.matchedAs}"
+                            </span>
+                            <span style={{ color: '#a16207' }}>· add the literal term</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Required Missing — highlighted separately */}
                   {results.requiredMissing?.length > 0 && (

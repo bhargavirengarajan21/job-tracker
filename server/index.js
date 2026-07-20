@@ -7,6 +7,7 @@ const { getDb } = require('./db');
 const { router: authRouter } = require('./auth');
 const applicationsRouter = require('./applications');
 const atsRouter = require('./ats');
+const jobsRouter = require('./jobs');
 const { router: cronRouter, startCronJob } = require('./cron-jobs');
 
 const app = express();
@@ -23,6 +24,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use('/api/auth', authRouter);
 app.use('/api/applications', applicationsRouter);
 app.use('/api/ats', atsRouter);
+app.use('/api/jobs', jobsRouter);
 app.use('/api/cron', cronRouter);
 
 app.get('/api/health', (req, res) => {

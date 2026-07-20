@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../api';
 
 const EMPTY_FORM = {
-  company: '', position: '', status: 'applied', notes: '', job_url: '', ats_score: '',
-  linkedin_message: '', email_subject: '', email_body: ''
+  company: '', position: '', status: 'applied', notes: '', job_url: '', ats_score: ''
 };
 
 function Dashboard() {
@@ -11,9 +10,6 @@ function Dashboard() {
   const [showModal, setShowModal] = useState(false);
   const [editingApp, setEditingApp] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
-  const [outreachApp, setOutreachApp] = useState(null);
-  const [generating, setGenerating] = useState(false);
-  const [copied, setCopied] = useState('');
 
   useEffect(() => {
     fetchApplications();
@@ -53,10 +49,7 @@ function Dashboard() {
       status: app.status,
       notes: app.notes || '',
       job_url: app.job_url || '',
-      ats_score: app.ats_score || '',
-      linkedin_message: app.linkedin_message || '',
-      email_subject: app.email_subject || '',
-      email_body: app.email_body || ''
+      ats_score: app.ats_score || ''
     });
     setShowModal(true);
   };
@@ -69,32 +62,6 @@ function Dashboard() {
     } catch (err) {
       console.error('Failed to delete:', err);
     }
-  };
-
-  const handleGenerateOutreach = async (app) => {
-    setGenerating(true);
-    try {
-      const { data } = await api.post('/applications/generate-outreach', {
-        company: app.company,
-        position: app.position,
-        notes: app.notes,
-        job_url: app.job_url
-      });
-      const updated = { ...app, ...data };
-      await api.put(`/applications/${app.id}`, data);
-      setOutreachApp(updated);
-      fetchApplications();
-    } catch (err) {
-      console.error('Failed to generate:', err);
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const copyToClipboard = async (text, key) => {
-    await navigator.clipboard.writeText(text);
-    setCopied(key);
-    setTimeout(() => setCopied(''), 2000);
   };
 
   const stats = {
@@ -135,7 +102,6 @@ function Dashboard() {
               <th>Position</th>
               <th>Status</th>
               <th>ATS Score</th>
-              <th>Outreach</th>
               <th>Date</th>
               <th>Actions</th>
             </tr>
@@ -149,26 +115,6 @@ function Dashboard() {
                   <span className={`status-badge status-${app.status}`}>{app.status}</span>
                 </td>
                 <td>{app.ats_score ? `${app.ats_score}%` : '-'}</td>
-                <td>
-                  {app.linkedin_message || app.email_subject ? (
-                    <button
-                      className="btn btn-secondary"
-                      style={{ padding: '4px 10px', fontSize: '0.8rem' }}
-                      onClick={() => setOutreachApp(app)}
-                    >
-                      View
-                    </button>
-                  ) : (
-                    <button
-                      className="btn btn-success"
-                      style={{ padding: '4px 10px', fontSize: '0.8rem' }}
-                      onClick={() => handleGenerateOutreach(app)}
-                      disabled={generating}
-                    >
-                      {generating ? '...' : 'Generate'}
-                    </button>
-                  )}
-                </td>
                 <td>{new Date(app.applied_date).toLocaleDateString()}</td>
                 <td>
                   <button className="btn btn-secondary" onClick={() => handleEdit(app)} style={{ marginRight: 8, padding: '6px 12px' }}>Edit</button>
@@ -213,37 +159,6 @@ function Dashboard() {
                 <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Any notes about this application..." />
               </div>
 
-              <hr style={{ margin: '16px 0', borderColor: '#e5e7eb' }} />
-              <p style={{ fontSize: '0.85rem', color: '#6b7280', marginBottom: 12 }}>Outreach (optional — or use Generate button in the table)</p>
-
-              <div className="form-group">
-                <label>LinkedIn Message</label>
-                <textarea
-                  value={form.linkedin_message}
-                  onChange={(e) => setForm({ ...form, linkedin_message: e.target.value })}
-                  placeholder="Hi [Name], I came across the [Position] role at [Company]..."
-                  rows={3}
-                />
-              </div>
-              <div className="form-group">
-                <label>Email Subject</label>
-                <input
-                  type="text"
-                  value={form.email_subject}
-                  onChange={(e) => setForm({ ...form, email_subject: e.target.value })}
-                  placeholder="Application for [Position] — [Your Name]"
-                />
-              </div>
-              <div className="form-group">
-                <label>Email Body</label>
-                <textarea
-                  value={form.email_body}
-                  onChange={(e) => setForm({ ...form, email_body: e.target.value })}
-                  placeholder="Dear Hiring Manager,..."
-                  rows={5}
-                />
-              </div>
-
               <div className="modal-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary">{editingApp ? 'Update' : 'Add'}</button>
@@ -253,82 +168,6 @@ function Dashboard() {
         </div>
       )}
 
-      {/* Outreach View Modal */}
-      {outreachApp && (
-        <div className="modal-overlay" onClick={() => setOutreachApp(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 580 }}>
-            <h3>Outreach — {outreachApp.company} · {outreachApp.position}</h3>
-
-            {outreachApp.linkedin_message && (
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>LinkedIn Message</label>
-                  <button
-                    className="btn btn-secondary"
-                    style={{ padding: '3px 10px', fontSize: '0.78rem' }}
-                    onClick={() => copyToClipboard(outreachApp.linkedin_message, 'linkedin')}
-                  >
-                    {copied === 'linkedin' ? 'Copied!' : 'Copy'}
-                  </button>
-                </div>
-                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 6, padding: '10px 14px', fontSize: '0.9rem', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-                  {outreachApp.linkedin_message}
-                </div>
-                <div style={{ fontSize: '0.75rem', color: outreachApp.linkedin_message.length > 300 ? '#ef4444' : '#6b7280', marginTop: 4 }}>
-                  {outreachApp.linkedin_message.length}/300 chars
-                </div>
-              </div>
-            )}
-
-            {outreachApp.email_subject && (
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Email Subject</label>
-                  <button
-                    className="btn btn-secondary"
-                    style={{ padding: '3px 10px', fontSize: '0.78rem' }}
-                    onClick={() => copyToClipboard(outreachApp.email_subject, 'subject')}
-                  >
-                    {copied === 'subject' ? 'Copied!' : 'Copy'}
-                  </button>
-                </div>
-                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 6, padding: '10px 14px', fontSize: '0.9rem' }}>
-                  {outreachApp.email_subject}
-                </div>
-              </div>
-            )}
-
-            {outreachApp.email_body && (
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Email Body</label>
-                  <button
-                    className="btn btn-secondary"
-                    style={{ padding: '3px 10px', fontSize: '0.78rem' }}
-                    onClick={() => copyToClipboard(outreachApp.email_body, 'email')}
-                  >
-                    {copied === 'email' ? 'Copied!' : 'Copy'}
-                  </button>
-                </div>
-                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 6, padding: '10px 14px', fontSize: '0.9rem', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-                  {outreachApp.email_body}
-                </div>
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button
-                className="btn btn-success"
-                onClick={() => handleGenerateOutreach(outreachApp)}
-                disabled={generating}
-              >
-                {generating ? 'Generating...' : 'Regenerate with AI'}
-              </button>
-              <button className="btn btn-secondary" onClick={() => setOutreachApp(null)}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

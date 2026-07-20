@@ -68,6 +68,18 @@ async function getDb() {
     )
   `);
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS job_decisions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      job_url TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      decided_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, job_url),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `);
+
   // Migrations for new columns (safe to run on existing DB)
   try { db.run('ALTER TABLE applications ADD COLUMN linkedin_message TEXT'); } catch (_) {}
   try { db.run('ALTER TABLE applications ADD COLUMN email_subject TEXT'); } catch (_) {}

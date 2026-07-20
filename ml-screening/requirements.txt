@@ -1,0 +1,6 @@
+scikit-learn>=1.4
+pandas>=2.0
+datasets>=2.18
+fastapi>=0.110
+uvicorn>=0.29
+joblib>=1.3
