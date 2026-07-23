@@ -1,0 +1,245 @@
+%-------------------------
+% Resume in Latex
+% Author : Jake Gutierrez
+% Based off of: https://github.com/sb2nov/resume
+% License : MIT
+%------------------------
+
+\documentclass[letterpaper,11pt]{article}
+
+\usepackage{latexsym}
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{marvosym}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{verbatim}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\usepackage[english]{babel}
+\usepackage{tabularx}
+\input{glyphtounicode}
+
+
+%----------FONT OPTIONS----------
+% sans-serif
+% \usepackage[sfdefault]{FiraSans}
+% \usepackage[sfdefault]{roboto}
+% \usepackage[sfdefault]{noto-sans}
+% \usepackage[default]{sourcesanspro}
+
+% serif
+% \usepackage{CormorantGaramond}
+% \usepackage{charter}
+
+
+\pagestyle{fancy}
+\fancyhf{} % clear all header and footer fields
+\fancyfoot{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% Adjust margins
+\addtolength{\oddsidemargin}{-0.5in}
+\addtolength{\evensidemargin}{-0.5in}
+\addtolength{\textwidth}{1in}
+\addtolength{\topmargin}{-.5in}
+\addtolength{\textheight}{1.0in}
+
+\urlstyle{same}
+
+\raggedbottom
+\raggedright
+\setlength{\tabcolsep}{0in}
+
+% Sections formatting
+\titleformat{\section}{
+  \vspace{-4pt}\scshape\raggedright\large
+}{}{0em}{}[\color{black}\titlerule \vspace{-5pt}]
+
+% Ensure that generate pdf is machine readable/ATS parsable
+\pdfgentounicode=1
+
+%-------------------------
+% Custom commands
+\newcommand{\resumeItem}[1]{
+  \item\small{
+    {#1 \vspace{-2pt}}
+  }
+}
+
+\newcommand{\resumeSubheading}[4]{
+  \vspace{-2pt}\item
+    \begin{tabular*}{0.97\textwidth}[t]{l@{\extracolsep{\fill}}r}
+      \textbf{#1} & #2 \\
+      \textit{\small#3} & \textit{\small #4} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubSubheading}[2]{
+    \item
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \textit{\small#1} & \textit{\small #2} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeProjectHeading}[2]{
+    \item
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \small#1 & #2 \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubItem}[1]{\resumeItem{#1}\vspace{-4pt}}
+
+\renewcommand\labelitemii{$\vcenter{\hbox{\tiny$\bullet$}}$}
+
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.15in, label={}]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
+
+%-------------------------------------------
+%%%%%%  RESUME STARTS HERE  %%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\begin{document}
+
+%----------HEADING----------
+\begin{center}
+    \textbf{\Huge \scshape Bhargavi Rengarajan} \\ \vspace{1pt}
+    \small +1(951)334-6504 $|$ \href{mailto:bhargavirengarajan21@gmail.com}{\underline{bhargavirengarajan21@gmail.com}} $|$ 
+    \href{https://linkedin.com/in/bhargavi-r21}{\underline{linkedin.com/in/bhargavi-r21}} $|$
+ \href{https://github.com/bhargavirengarajan21}{\underline{https://github.com/bhargavirengarajan21}} $|$    Chicago, IL
+\end{center}
+
+%-----------PROGRAMMING SKILLS-----------
+\section{Technical Skills}
+ \begin{itemize}[leftmargin=0.15in, label={}]
+    \small{\item{
+     \textbf{Languages}{: Java, TypeScript, JavaScript, Python, Go, SQL, C/C++, R, HTML5, CSS3} \\
+     \textbf{Frontend}{: React, Next.js, Redux, React Context, GraphQL, Tailwind CSS, Material-UI, SCSS, Storybook, Webpack} \\
+     \textbf{Backend}{: Node.js, Express.js, Spring Boot (WebFlux), Flask, RESTful API, OpenAPI, Kafka, Azure Service Bus, Redis, MongoDB, PostgreSQL} \\
+     \textbf{Cloud \& DevOps}{: AWS (EC2), Azure (Pipelines), Google Cloud Platform, Docker, Kubernetes, GitHub Actions, New Relic, Git} \\
+     \textbf{Testing \& Accessibility}{: Jest, React Testing Library, Cypress, JUnit, Lighthouse} \\
+     \textbf{AI \& Data Science}{: Claude, Model Context Protocol (MCP), Gemini, Ollama, XGBoost, CuPy, PySpark, Hadoop, pandas, NumPy, Matplotlib} \\
+      \textbf{Competencies}{: Frontend development, Agile methodologies, Scrum, Full-Stack, Distributed Systems, Microservices, Data Structures, Algorithms, Server Side Rendering, Macro Frontend, Microservices}
+    }}
+ \end{itemize}
+
+
+
+%-----------EXPERIENCE-----------
+\section{Experience}
+  \resumeSubHeadingListStart
+
+    \resumeSubheading
+      {Rocket Mortgage}{Remote, USA}
+      {Software Development Engineer II}{March 2025 -- Present}
+      \resumeItemListStart
+        \resumeItem{Refactored the draw-eligibility logic to maintain data integrity, processing requests on a 1-hour interval in a Java Spring Boot microservice, eliminating duplicate approvals.}
+        \resumeItem{Designed and prototyped an MCP-based GenAI tool connecting Claude to New Relic through an Express MCP server and a Next.js frontend, enabling plain-language queries over production monitoring data.}
+        \resumeItem{Fortified the loan-servicing event pipeline over Azure Service Bus by catching and marking failed events, so 100\% of previously silent failures are now handled instead of lost.}
+        \resumeItem{Achieved 100\% recovery of failed callback events with a Kafka event listener that retries 3 times before routing to a dead-letter queue, deployed through Docker and Azure Pipelines.}
+        \resumeItem{Developed a RESTful PATCH endpoint to cancel a payment that coordinates 3 downstream side-effect calls, completing the full cancel-and-update in 2.5s.}
+        \resumeItem{Designed robust schema for payment audit trail in SQL that records every transaction update, decreased data corruption and redundancy by 50\%.}
+        \resumeItem{Advocated for strict input validation at the contract boundary using OpenAPI and a global exception handler, tightening field-length limits so invalid data is rejected before it reaches the service.}
+        \resumeItem{Standardized error handling and response format across backend services in Spring Boot REST, replacing inconsistent formats with one contract and cutting debugging time 35\%.}
+        \resumeItem{Monitored production servicing jobs by adding structured logging and New Relic alerts into Teams, cutting on-call noise 83\% so the rotation focuses on real incidents.}
+        \resumeItem{Verified consistent service health across all deployment environments by owning the observability configuration and infrastructure-as-code, so every environment reports the same way.}
+        \resumeItem{Developed Node.js middleware that runs dependent eligibility checks for 4M applications in under 180ms and removed 95\% of manual review.}
+        \resumeItem{Created a React dashboard component backed by server-side Redis caching with a 24-hour TTL, cutting an external vendor call from 10,000 requests a day to 1 per user.}
+        \resumeItem{Integrated Microsoft Omnichannel live chat, which runs as its own microservice, across the React web application so customers get real-time answers on marketing pages.}
+        \resumeItem{Maintained a reusable React component library shared across 5 brand applications, keeping 20+ components consistent and removing duplicate UI code.}
+        \resumeItem{Owned observability for scheduled-job services by configuring New Relic alerts, reducing debugging time from 15 minutes to 2 minutes.}
+        \resumeItem{Automated testing, linting, and snapshot generation in GitHub Actions CI/CD, reducing manual deployment effort 40\%.}
+        \resumeItem{Expanded the Spring Boot and Kafka messaging service to deliver across multiple brands, growing a single-brand pipeline into multi-brand delivery that lifted reach 65\% and engagement 15\%.}
+        \resumeItem{Served as a primary contact for distributed cross-timezone teams, unblocking release dependencies and cutting handoff delays by 50\%.}
+        \resumeItem{Owned end-to-end delivery of a full-stack application: a Next.js frontend with Node.js middleware that schedules page rendering and fetches data and config from GCP, unblocking a stalled release and doubling deployment speed.}
+      \resumeItemListEnd
+
+    \resumeSubheading
+      {Mr. Cooper}{Chennai, India}
+      {Software Development Engineer II}{April 2022 -- September 2023}
+      \resumeItemListStart
+        \resumeItem{Received the  “Challenger - Q4” award for outstanding innovation and problem-solving contributions.}
+        \resumeItem{Mentored 5+ interns developing B2C application and onboarded new hires via KT sessions, teaching codebase architecture and clean coding best practices.}
+        \resumeItem{Led a banner-automation workflow, building a Node.js and Webpack code-generation pipeline with an ERB/EJS transpiler that replaced manual scaffolding and cleared a 200-story backlog, cutting banner creation from 3 engineer-days to 30 minutes.}
+        \resumeItem{Published a typed, reusable API client in TypeScript with Axios interceptors, keep-alive connections, and Redis, standardizing fragmented integration across 5 apps with 10 endpoints and zero connection leaks.}
+        \resumeItem{Engaged with the tech lead to migrate the legacy React app to Next.js for server-side rendering, improving page load performance 60\%.}
+        \resumeItem{Resolved duplicated state and layout code across 40+ pages by refactoring shared layouts with design input, so a single layout change now ships from one place.}
+        \resumeItem{Revamped the styling foundation into reusable SCSS mixins, palette, and utilities for white-label brands, collapsing 50+ duplicated style files into one across 2 brands.}
+        \resumeItem{Refactored Dockerfiles into multi-stage builds, reducing container image size 40\%.}
+        \resumeItem{Accelerated React page loads by building a scheduled microservice cronjob that pulls third-party mortgage rate data into Redis on a 24-hour refresh, so pages read ready data instead of waiting on the external call.}
+        \resumeItem{Launched a personalized loan officer page in React and GraphQL with filtering and sorting, improving customer engagement 25\%.}
+        \resumeItem{Measured marketing-funnel behavior by adding Google Analytics across 15+ pages, turning a no-data gap into conversion insight.}
+        \resumeItem{Solved slow dashboard reads by profiling and rewriting MongoDB aggregation queries behind Express and Redux, cutting latency from 560ms to 100ms for 9,000+ users.}
+      \resumeItemListEnd
+
+    \resumeSubheading
+      {Mr. Cooper}{Chennai, India}
+      {Software Development Engineer I}{July 2020 -- March 2022}
+      \resumeItemListStart
+        \resumeItem{Addressed ADA and WCAG accessibility failures across 100+ pages, working with the team to add ARIA and enforce checks through eslint-plugin-jsx-a11y with Lighthouse and WAVE audits.}
+        \resumeItem{Validated component behavior across unit, integration, and end-to-end layers with Jest, React Testing Library, Cypress, and Husky, raising coverage on 40+ components and cutting regressions 30\%.}
+        \resumeItem{Streamlined the application form into a React multistep flow that preloads the user's saved data through Node.js and Redux, cutting repeated data entry.}
+        \resumeItem{Adapted the marketing pages for internationalization and localization across roughly 5 brands, so each brand serves content in its own locale from one codebase.}
+        \resumeItem{Built and documented a shared UI component library in React, Storybook, and Context API, adopted across 4 applications to end fragmented UI work.}
+        \resumeItem{Volunteered to fix broken local tooling for the team, adding a Node.js and Express proxy that unblocked engineers' local environments.}
+      \resumeItemListEnd
+
+  \resumeSubHeadingListEnd
+
+
+%-----------PROJECTS-----------
+\section{Projects}
+    \resumeSubHeadingListStart
+      \resumeProjectHeading
+          {\textbf{Git Commit Tool} $|$ Open Source $|$ \emph{Node.js, Ollama, Docker}}{}
+          \resumeItemListStart
+            \resumeItem{Engineered an on-device Git subcommand using Node.js and Ollama, achieving 168$\times$ size reduction and 381 downloads.}
+          \resumeItemListEnd
+      \resumeProjectHeading
+          {\textbf{Netflix-Inspired Portfolio} $|$ \emph{Gemini, TypeScript, AWS EC2, Tailwind, GitHub Actions}}{}
+          \resumeItemListStart
+            \resumeItem{Developed a Netflix-style portfolio with a Gemini chatbot, improving recruiter engagement 30\% and reducing bounce rate 20\%.}
+          \resumeItemListEnd
+      \resumeProjectHeading
+          {\textbf{Distributed Cloud Logging} $|$ \emph{Golang, Kubernetes, Blockchain}}{}
+          \resumeItemListStart
+            \resumeItem{Developed a serverless, tamper-resistant cloud logging system using Golang services deployed on Kubernetes, enabling real-time log capture and reducing debugging time by 60\%.}
+          \resumeItemListEnd
+      \resumeProjectHeading
+          {\textbf{Air Pollution Prediction} $|$ Research Project $|$ \emph{Python, Flask, XGBoost}}{}
+          \resumeItemListStart
+            \resumeItem{Developed a full-stack Flask PM10 prediction system using XGBoost, achieving 95\% cross-validated accuracy.}
+          \resumeItemListEnd
+      \resumeProjectHeading
+          {\textbf{Electrostatic Dithering \& Visualization} $|$ \emph{Python, CuPy, Google Colab}}{}
+          \resumeItemListStart
+            \resumeItem{Engineered GPU-accelerated electrostatic dithering algorithms and visualized force distributions to improve pattern uniformity and reduce rendering artifacts.}
+          \resumeItemListEnd
+      \resumeProjectHeading
+          {\textbf{US Accident Zone Visualization} $|$ \emph{React, PySpark, Hadoop, React Maps}}{}
+          \resumeItemListStart
+            \resumeItem{Developed a geospatial accident-zone visualization platform with a React frontend and PySpark processing on Hadoop-backed datasets to identify high-risk hotspots.}
+          \resumeItemListEnd
+    \resumeSubHeadingListEnd
+
+
+
+%
+%-----------EDUCATION-----------
+\section{Education}
+  \resumeSubHeadingListStart
+    \resumeSubheading
+      {University of California, Riverside}{Riverside, California}
+      {Master of Science in Computer Engineering}{September 2023 -- March 2025}
+    \resumeSubheading
+      {Thiagarajar College of Engineering}{Tamil Nadu, India}
+      {Bachelor of Engineering in Computer Science}{August 2016 -- April 2020}
+  \resumeSubHeadingListEnd
+
+
+%-------------------------------------------
+\end{document}

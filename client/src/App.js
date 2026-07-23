@@ -3,13 +3,14 @@ import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import ATSScorer from './components/ATSScorer';
 import ResumeReview from './components/ResumeReview';
-import JobBoard from './components/JobBoard';
+// import JobBoard from './components/JobBoard';
 import './App.css';
 
 function App() {
   const [user, setUser] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [atsContext, setAtsContext] = useState(null);
+  const [preloadedResume, setPreloadedResume] = useState(null);
 
   useEffect(() => {
     const savedUser = localStorage.getItem('user');
@@ -45,9 +46,6 @@ function App() {
         <button className={`tab ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
           Applications
         </button>
-        <button className={`tab ${activeTab === 'board' ? 'active' : ''}`} onClick={() => setActiveTab('board')}>
-          Job Board
-        </button>
         <button className={`tab ${activeTab === 'ats' ? 'active' : ''}`} onClick={() => setActiveTab('ats')}>
           ATS Scanner
         </button>
@@ -61,14 +59,14 @@ function App() {
         <div style={{ display: activeTab === 'dashboard' ? 'block' : 'none' }}>
           <Dashboard />
         </div>
-        <div style={{ display: activeTab === 'board' ? 'block' : 'none' }}>
+        {/* <div style={{ display: activeTab === 'board' ? 'block' : 'none' }}>
           <JobBoard />
-        </div>
+        </div> */}
         <div style={{ display: activeTab === 'ats' ? 'block' : 'none' }}>
-          <ATSScorer onScanComplete={setAtsContext} />
+          <ATSScorer onScanComplete={setAtsContext} onPreloadedResume={setPreloadedResume} />
         </div>
         <div style={{ display: activeTab === 'review' ? 'block' : 'none' }}>
-          <ResumeReview atsContext={atsContext} onSwitchToATS={() => setActiveTab('ats')} />
+          <ResumeReview atsContext={atsContext} onSwitchToATS={() => setActiveTab('ats')} preloadedResume={preloadedResume} />
         </div>
       </main>
     </div>

@@ -98,8 +98,13 @@ function saveDb() {
 
 function runQuery(sql, params = []) {
   db.run(sql, params);
+  // Read last_insert_rowid() BEFORE saveDb(): saveDb() calls db.export(), which
+  // resets last_insert_rowid() to 0. Reading it afterwards made every INSERT return
+  // id 0 — breaking register (all users got JWT id 0 and shared data) and making
+  // POST routes return null after a create.
+  const lastInsertRowid = db.exec("SELECT last_insert_rowid()")[0]?.values[0][0];
   saveDb();
-  return { lastInsertRowid: db.exec("SELECT last_insert_rowid()")[0]?.values[0][0] };
+  return { lastInsertRowid };
 }
 
 function getOne(sql, params = []) {

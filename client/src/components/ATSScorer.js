@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import api from '../api';
 
-function ATSScorer({ onScanComplete }) {
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+
+function ATSScorer({ onScanComplete, onPreloadedResume }) {
   const [jobDescription, setJobDescription] = useState('');
   const [jobUrl, setJobUrl] = useState('');
   const [company, setCompany] = useState('');
@@ -13,6 +15,7 @@ function ATSScorer({ onScanComplete }) {
   const [activeResultTab, setActiveResultTab] = useState('ats');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [steps, setSteps] = useState([]);
 
   const handleScrape = async () => {
     if (!jobUrl.trim()) {
@@ -39,56 +42,116 @@ function ATSScorer({ onScanComplete }) {
       setError('Please enter a job description');
       return;
     }
-    if (!file) {
-      setError('Please upload your resume (PDF or DOCX)');
-      return;
-    }
 
     setLoading(true);
     setError('');
     setResults(null);
     setActiveResultTab('ats');
-
-    const formData = new FormData();
-    formData.append('jobDescription', jobDescription);
-    formData.append('resume', file);
+    setSteps([]);
+    if (onPreloadedResume) onPreloadedResume(null);
 
     try {
-      const { data } = await api.post('/ats/score', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+      const token = localStorage.getItem('token');
+      const formData = new FormData();
+      formData.append('jobDescription', jobDescription);
+      formData.append('company', company);
+      formData.append('position', position);
+      if (file) formData.append('resume', file);
+
+      const response = await fetch(`${API_BASE}/ats/score-stream`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
       });
-      setResults(data);
-      if (onScanComplete) {
-        const rs = data.recruiterScreen || {};
-        const allKws = [...(data.matchedKeywords || []), ...(data.demonstratedMissing || []), ...(data.missingKeywords || [])];
-        onScanComplete({
-          jobDescription,
-          company,
-          position,
-          score: data.score,                          // strict / original ATS
-          demonstratedScore: data.demonstratedScore,  // literal + implied
-          demonstratedMissing: data.demonstratedMissing || [], // proven but keyword absent
-          missingRequired: data.requiredMissing || [],
-          missingPreferred: (data.missingKeywords || []).filter(k => k.priority === 'preferred'),
-          softSkills: allKws.filter(k => k.category === 'softSkills').map(k => k.keyword),
-          // Aggressively cut anything that doesn't add value for this JD:
-          //   • audit lines marked "remove" OR with no relevance to the role
-          //   • the recruiter's explicit "delete these" quick-cuts
-          linesToRemove: Array.from(new Set([
-            ...(rs.lineByLineAudit || [])
-              .filter(l => l.verdict === 'remove' || l.relevance === 'none')
-              .map(l => l.line),
-            ...(rs.removeToSaveSpace || [])
-          ].filter(Boolean))),
-          // Individual skills to strip out of the skills line (irrelevant to this role)
-          skillsToRemove: (rs.irrelevantSkills || []).map(s => s.skill || s).filter(Boolean),
-          grammarFixes: rs.grammarErrors || []
-        });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // Parse SSE events from buffer
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        let eventType = '';
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            eventType = line.slice(7).trim();
+          } else if (line.startsWith('data: ')) {
+            const rawData = line.slice(6);
+            try {
+              const data = JSON.parse(rawData);
+              handleStreamEvent(eventType, data);
+            } catch {}
+          }
+        }
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to analyze resume');
+      setError(err.message || 'Failed to analyze resume');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleStreamEvent = (event, data) => {
+    switch (event) {
+      case 'step': {
+        setSteps(prev => {
+          const existing = prev.findIndex(s => s.name === data.name);
+          if (existing >= 0) {
+            const next = [...prev];
+            next[existing] = { ...next[existing], status: data.status };
+            return next;
+          }
+          return [...prev, { name: data.name, status: data.status }];
+        });
+        break;
+      }
+      case 'ats-result': {
+        setResults(data);
+        if (onScanComplete) {
+          const rs = data.recruiterScreen || {};
+          const allKws = [...(data.matchedKeywords || []), ...(data.demonstratedMissing || []), ...(data.missingKeywords || [])];
+          const scanContext = {
+            jobDescription,
+            company,
+            position,
+            score: data.score,
+            demonstratedScore: data.demonstratedScore,
+            demonstratedMissing: data.demonstratedMissing || [],
+            missingRequired: data.requiredMissing || [],
+            missingPreferred: (data.missingKeywords || []).filter(k => k.priority === 'preferred'),
+            softSkills: allKws.filter(k => k.category === 'softSkills').map(k => k.keyword),
+            linesToRemove: Array.from(new Set([
+              ...(rs.lineByLineAudit || [])
+                .filter(l => l.verdict === 'remove' || l.relevance === 'none')
+                .map(l => l.line),
+              ...(rs.removeToSaveSpace || [])
+            ].filter(Boolean))),
+            skillsToRemove: (rs.irrelevantSkills || []).map(s => s.skill || s).filter(Boolean),
+            grammarFixes: rs.grammarErrors || [],
+            transferableSkills: data.transferableSkills || [],
+          };
+          onScanComplete(scanContext);
+        }
+        break;
+      }
+      case 'resume-result': {
+        if (data && data.tailoredTex && onPreloadedResume) {
+          onPreloadedResume(data);
+        }
+        break;
+      }
+      case 'error': {
+        setError(data.error || 'Stream error');
+        break;
+      }
+      default:
+        break;
     }
   };
 
@@ -176,7 +239,7 @@ function ATSScorer({ onScanComplete }) {
             </div>
 
             <div className="form-group">
-              <label>Upload Resume (PDF or DOCX)</label>
+              <label>Upload Resume (optional — master resume used if not provided)</label>
               <input
                 type="file"
                 accept=".pdf,.docx"
@@ -206,11 +269,53 @@ function ATSScorer({ onScanComplete }) {
             <div className="empty-state">
               <h3>Analyzing your resume...</h3>
               <p>AI is running ATS keyword matching and simulating a recruiter's 6-second scan.</p>
+              {steps.length > 0 && (
+                <div style={{ marginTop: 16, textAlign: 'left', maxWidth: 400, margin: '16px auto 0' }}>
+                  {steps.map((step, i) => (
+                    <div key={i} style={{
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0',
+                      fontSize: '0.85rem', color: step.status === 'done' ? '#16a34a' : step.status === 'error' ? '#dc2626' : '#2563eb'
+                    }}>
+                      {step.status === 'running' ? (
+                        <div style={{
+                          width: 14, height: 14, border: '2px solid #93c5fd', borderTopColor: '#2563eb',
+                          borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0
+                        }} />
+                      ) : step.status === 'done' ? (
+                        <span style={{ flexShrink: 0, fontSize: '0.9rem' }}>&#10003;</span>
+                      ) : (
+                        <span style={{ flexShrink: 0, color: '#dc2626', fontSize: '0.9rem' }}>&#10007;</span>
+                      )}
+                      <span>{step.name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
           {results && (
             <div>
+              {/* Background resume generation indicator */}
+              {results && steps.some(s => ['generate-resume', 'compile-pdf', 'score-tailored'].includes(s.name) && s.status !== 'done') && (
+                <div style={{
+                  padding: '10px 16px', borderRadius: 8, marginBottom: 16,
+                  background: '#eff6ff', border: '1px solid #bfdbfe',
+                  display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.85rem'
+                }}>
+                  <div style={{
+                    width: 16, height: 16, border: '2px solid #93c5fd', borderTopColor: '#2563eb',
+                    borderRadius: '50%', animation: 'spin 0.8s linear infinite'
+                  }} />
+                  <span style={{ color: '#1d4ed8', fontWeight: 500 }}>
+                    Generating tailored resume in background...
+                  </span>
+                  <span style={{ color: '#6b7280', fontSize: '0.78rem' }}>
+                    — it'll be ready when you switch to the Generate tab
+                  </span>
+                </div>
+              )}
+
               {/* Result tabs */}
               <div style={{ display: 'flex', gap: 0, borderBottom: '2px solid #e1e5eb', marginBottom: 20 }}>
                 <button
@@ -438,6 +543,31 @@ function ATSScorer({ onScanComplete }) {
                           <span key={i} className="keyword-tag keyword-missing">
                             {kw.keyword || kw}
                           </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Transferable Skills */}
+                  {results.transferableSkills?.length > 0 && (
+                    <div style={{ marginTop: 20 }}>
+                      <h4 style={{ marginBottom: 4, color: '#7c3aed' }}>
+                        Transferable Skills ({results.transferableSkills.length})
+                      </h4>
+                      <p style={{ fontSize: '0.8rem', color: '#666', marginBottom: 8 }}>
+                        Skills from your experience that map to this role even without exact keyword matches — the AI preserves these bullets.
+                      </p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {results.transferableSkills.map((ts, i) => (
+                          <div key={i} style={{
+                            display: 'flex', alignItems: 'flex-start', gap: 8,
+                            padding: '8px 12px', background: '#f5f3ff', borderRadius: 6,
+                            border: '1px solid #ddd6fe', fontSize: '0.82rem'
+                          }}>
+                            <span style={{ fontWeight: 600, color: '#6b21a8', flexShrink: 0 }}>{ts.skill}</span>
+                            <span style={{ color: '#7c3aed' }}>&rarr;</span>
+                            <span style={{ color: '#374151' }}>{ts.mapsTo}</span>
+                          </div>
                         ))}
                       </div>
                     </div>

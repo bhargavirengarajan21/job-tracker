@@ -4,7 +4,6 @@ import api from '../api';
 const DEFAULT_SHEET_URL =
   'https://docs.google.com/spreadsheets/d/16-MJFCOfAfCtEETwl8c6SuI4mr6Bm63ViVrTNUBuPUU/edit?gid=0#gid=0';
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 // Pipeline steps shown while an Apply is running, in order.
 const STEPS = [
@@ -37,7 +36,6 @@ function JobBoard() {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [masterResume, setMasterResume] = useState(null);
   const [showDeclined, setShowDeclined] = useState(false);
   // pipeline[url] = { step, done, error, score, demonstratedScore, changeLog, outreach, filename }
   const [pipeline, setPipeline] = useState({});
@@ -80,10 +78,6 @@ function JobBoard() {
   };
 
   const handleApply = async (job) => {
-    if (!masterResume) {
-      setError('Upload your master resume first — Apply reuses it for every job.');
-      return;
-    }
     setError('');
     setExpanded(prev => ({ ...prev, [job.url]: true }));
     updatePipeline(job.url, { step: 0, done: false, error: '', changeLog: null, outreach: null });
@@ -94,13 +88,12 @@ function JobBoard() {
       const jobDescription = scrapeRes.data.jobDescription;
       if (!jobDescription) throw new Error('Could not read a job description from this posting');
 
-      // 2. Score the master resume against the JD
+      // 2. Score the master resume (main.tex) against the JD — JSON, no file needed
       updatePipeline(job.url, { step: 1 });
-      const scoreForm = new FormData();
-      scoreForm.append('jobDescription', jobDescription);
-      scoreForm.append('resume', masterResume);
-      const { data: scoreData } = await api.post('/ats/score', scoreForm, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+      const { data: scoreData } = await api.post('/ats/score', {
+        jobDescription,
+        company: job.company,
+        position: job.title,
       });
 
       const recruiter = scoreData.recruiterScreen || {};
@@ -114,7 +107,6 @@ function JobBoard() {
         ...(recruiter.removeToSaveSpace || [])
       ].filter(Boolean)));
       const skillsToRemove = (recruiter.irrelevantSkills || []).map(s => s.skill || s).filter(Boolean);
-      const grammarFixes = recruiter.grammarErrors || [];
 
       // Fold "demonstrated but keyword missing" preferred skills into what gets added.
       const preferredKeys = new Set(missingPreferred.map(k => (k.keyword || k || '').toLowerCase()));
@@ -122,48 +114,62 @@ function JobBoard() {
         .filter(k => k.priority !== 'required' && !preferredKeys.has((k.keyword || '').toLowerCase()));
       const missingPreferredMerged = [...missingPreferred, ...demonstratedPreferred];
 
-      // 3. Generate the tailored resume (DOCX) and trigger a download
+      // 3. Generate tailored resume via tex-based pipeline (returns .tex directly)
       updatePipeline(job.url, { step: 2, score: scoreData.score, demonstratedScore: scoreData.demonstratedScore });
-      const genForm = new FormData();
-      genForm.append('resume', masterResume);
-      genForm.append('company', job.company || '');
-      genForm.append('position', job.title || '');
-      genForm.append('missingRequiredJson', JSON.stringify(missingRequired));
-      genForm.append('missingPreferredJson', JSON.stringify(missingPreferredMerged));
-      genForm.append('linesToRemoveJson', JSON.stringify(linesToRemove));
-      genForm.append('skillsToRemoveJson', JSON.stringify(skillsToRemove));
-      genForm.append('grammarFixesJson', JSON.stringify(grammarFixes));
-      genForm.append('jobDescription', jobDescription);
-
-      const token = localStorage.getItem('token');
-      const genRes = await fetch(`${API_BASE}/ats/generate`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: genForm
+      const previewRes = await api.post('/ats/preview-tex', {
+        jobDescription,
+        company: job.company,
+        position: job.title,
+        linesToRemove,
+        skillsToRemove,
+        missingRequired,
+        missingPreferred: missingPreferredMerged,
       });
-      if (!genRes.ok) {
-        let msg = 'Resume generation failed';
-        try { msg = JSON.parse(await genRes.text()).error || msg; } catch { /* keep default */ }
-        throw new Error(msg);
-      }
-      const blob = await genRes.blob();
-      const logHeader = genRes.headers.get('x-change-log');
-      const decodeLog = (h) => { try { return JSON.parse(decodeURIComponent(h)); } catch { try { return JSON.parse(h); } catch { return []; } } };
-      const changeLog = logHeader ? decodeLog(logHeader) : [];
+      const { tailoredTex, changeList, filename: texFilename } = previewRes.data;
 
-      const filename = [job.company, job.title, 'resume']
-        .filter(Boolean).join('_').replace(/[^a-z0-9_\-]/gi, '_') || 'tailored_resume';
+      if (!tailoredTex) throw new Error('Preview generation failed — no tailored .tex returned');
+
+      // Download the tailored .tex file
+      const blob = new Blob([tailoredTex], { type: 'application/x-tex' });
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = blobUrl;
-      a.download = `${filename}.docx`;
+      a.download = texFilename || 'tailored_resume.tex';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(blobUrl);
 
+      const filename = texFilename || 'tailored_resume.tex';
+      const changeLog = changeList || [];
+
+      // Compile PDF + score tailored resume in parallel (best-effort)
+      let pdfUrl = null;
+      let tailoredScore = null;
+      let tailoredDemonstrated = null;
+
+      const pdfPromise = api.post('/ats/compile-tex', {
+        texContent: tailoredTex,
+        filename: filename.replace(/\.tex$/, ''),
+      }, { responseType: 'blob' }).then(res => {
+        pdfUrl = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      }).catch(() => {});
+
+      const scorePromise = api.post('/ats/score-tailored', {
+        texContent: tailoredTex,
+        jobDescription,
+      }).then(res => {
+        tailoredScore = res.data.score;
+        tailoredDemonstrated = res.data.demonstratedScore;
+      }).catch(() => {});
+
+      await Promise.all([pdfPromise, scorePromise]);
+
       // 4. Outreach (HM + recruiter emails, LinkedIn message)
-      updatePipeline(job.url, { step: 3, changeLog, filename: `${filename}.docx` });
+      updatePipeline(job.url, {
+        step: 3, changeLog, filename, pdfUrl,
+        tailoredScore, tailoredDemonstrated,
+      });
       let outreach = null;
       try {
         const { data } = await api.post('/ats/outreach', {
@@ -202,19 +208,12 @@ function JobBoard() {
     <div>
       <h2 style={{ marginBottom: 6 }}>Job Board</h2>
       <p style={{ color: '#666', marginBottom: 16 }}>
-        Loads jobs from your Google Sheet. Upload your master resume once, then hit <strong>Apply</strong> on a job to
-        automatically scrape the JD, score your resume, generate a tailored resume, and draft outreach — or <strong>Decline</strong> to skip it.
+        Loads jobs from your Google Sheet. Hit <strong>Apply</strong> on a job to
+        automatically scrape the JD, score your master resume, generate a tailored version, and draft outreach — or <strong>Decline</strong> to skip it.
       </p>
 
-      {/* Master resume + sheet controls */}
+      {/* Sheet controls */}
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 16 }}>
-        <div className="form-group" style={{ margin: 0, flex: '1 1 260px' }}>
-          <label>Master Resume (PDF or DOCX)</label>
-          <input type="file" accept=".pdf,.docx" onChange={e => setMasterResume(e.target.files[0])} style={{ padding: '8px 0' }} />
-          {masterResume
-            ? <p style={{ fontSize: '0.82rem', color: '#16a34a', marginTop: 4 }}>{masterResume.name} — ready</p>
-            : <p style={{ fontSize: '0.82rem', color: '#b45309', marginTop: 4 }}>Required before you can Apply.</p>}
-        </div>
         <div className="form-group" style={{ margin: 0, flex: '2 1 340px' }}>
           <label>Google Sheet URL</label>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -309,8 +308,7 @@ function JobBoard() {
                         ) : (
                           <div style={{ display: 'inline-flex', gap: 6 }}>
                             <button className="btn btn-primary" style={{ padding: '4px 14px', fontSize: '0.8rem' }}
-                              onClick={() => handleApply(job)} disabled={running || !masterResume}
-                              title={!masterResume ? 'Upload your master resume first' : ''}>
+                              onClick={() => handleApply(job)} disabled={running}>
                               {running ? 'Applying…' : 'Apply'}
                             </button>
                             <button className="btn btn-secondary" style={{ padding: '4px 14px', fontSize: '0.8rem' }}
@@ -345,13 +343,31 @@ function JobBoard() {
                             {p.error && <div className="error-message" style={{ marginTop: 8 }}>{p.error}</div>}
 
                             {(p.done || p.score != null) && (
-                              <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+                              <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                                 {p.score != null && (
                                   <div style={{ padding: '6px 12px', borderRadius: 8, background: '#f1f5f9', fontSize: '0.85rem' }}>
                                     Original ATS <strong>{p.score}%</strong>
                                   </div>
                                 )}
-                                {p.demonstratedScore != null && (
+                                {p.tailoredScore != null && (
+                                  <>
+                                    <span style={{ color: '#9ca3af' }}>→</span>
+                                    <div style={{ padding: '6px 12px', borderRadius: 8, fontSize: '0.85rem', fontWeight: 600,
+                                      background: p.tailoredScore >= 70 ? '#dcfce7' : p.tailoredScore >= 40 ? '#fef3c7' : '#fee2e2',
+                                      color: p.tailoredScore >= 70 ? '#16a34a' : p.tailoredScore >= 40 ? '#d97706' : '#dc2626'
+                                    }}>
+                                      Tailored <strong>{p.tailoredScore}%</strong>
+                                    </div>
+                                    <div style={{
+                                      padding: '3px 8px', borderRadius: 8, fontSize: '0.75rem', fontWeight: 600,
+                                      background: p.tailoredScore > p.score ? '#dcfce7' : p.tailoredScore < p.score ? '#fee2e2' : '#f1f5f9',
+                                      color: p.tailoredScore > p.score ? '#16a34a' : p.tailoredScore < p.score ? '#dc2626' : '#666'
+                                    }}>
+                                      {p.tailoredScore > p.score ? '+' : ''}{p.tailoredScore - (p.score || 0)}%
+                                    </div>
+                                  </>
+                                )}
+                                {p.demonstratedScore != null && !p.tailoredScore && (
                                   <div style={{ padding: '6px 12px', borderRadius: 8, background: '#ecfeff', fontSize: '0.85rem', color: '#0e7490' }}>
                                     Demonstrated <strong>{p.demonstratedScore}%</strong>
                                   </div>
@@ -375,6 +391,25 @@ function JobBoard() {
                                   ))}
                                 </div>
                               </details>
+                            )}
+
+                            {p.pdfUrl && (
+                              <div style={{
+                                border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden',
+                                marginTop: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)'
+                              }}>
+                                <div style={{
+                                  padding: '6px 12px', background: '#f1f5f9', borderBottom: '1px solid #e2e8f0',
+                                  fontSize: '0.75rem', color: '#666'
+                                }}>
+                                  PDF Preview
+                                </div>
+                                <iframe
+                                  src={p.pdfUrl}
+                                  title="Resume preview"
+                                  style={{ width: '100%', height: 500, border: 'none' }}
+                                />
+                              </div>
                             )}
 
                             {p.outreach && (

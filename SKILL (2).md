@@ -1,360 +1,119 @@
 ---
-name: resume-formatter
-description: Ensure ATS-friendly formatting and create clean scannable layouts
+name: resume-tailor
+description: "Use whenever a job description (JD) is provided and the goal is a resume tailored to it — pasted JD text, a JD link, a JD file, or phrasing like 'tailor my resume to this', 'make a resume for this role', 'tune to this posting', 'which of my bullets match this', or 'pick the 10/10 keyword matches'. Generates a targeted one-page LaTeX resume (.tex + compiled PDF) from the candidate's MASTER resume (bundled with this skill at assets/Bhargavi-master.tex) by removal only — bullets and skills are copied verbatim and pruned, never reworded: (1) apply ATS-result feedback to cut weak lines while preserving target keywords, (2) prune the skills section to the JD's tech stack, and (3) select bullets whose action-verb category matches the JD's responsibilities using a curated verb bank. Trigger even if the JD is pasted with no explicit instruction — a JD in the message IS the signal. Do NOT use for building or editing the master resume itself, or for generic resume advice with no JD attached."
 ---
 
-# Resume Formatter
+# Resume Tailor
 
-## When to Use This Skill
+Turn a MASTER resume into a targeted one-page resume for a specific JD. The master is the multi-page menu; the tailored output is one page cut from it. The only operation is **removal**: every bullet and every skill is copied verbatim from the master and either kept or deleted — never reworded, merged, shortened, added to, or reordered. Nothing is written from scratch, so the output cannot drift or fabricate.
 
-Use this skill when the user:
-- Needs help with resume layout and formatting
-- Has a messy or hard-to-read resume
-- Wants to ensure ATS compatibility through formatting
-- Needs a clean, professional design
-- Mentions: "format resume", "resume layout", "resume design", "clean resume", "professional format"
+## Inputs
 
-## Core Capabilities
+1. **Master resume (bundled — always read from this)** — `assets/Bhargavi-master.tex`, packaged with this skill. It is the canonical source of every bullet, the skills list, the header, and education, and the exact preamble/template to reuse. **Read from it every time** instead of reconstructing anything from memory. If a newer master is attached at invocation, use that one and treat the bundled copy as the fallback.
+2. **Experience matrix** — the spreadsheet (e.g. `experience-matrix.xlsx`), provided at invocation. Read it with `extract-text <file>`. Columns per row: **Section** (role), **Work** (JD-voice — never copy verbatim), **What I did** (the 2-word ground-truth action), **Problem**, **Stack**, **Number** (metrics), **Scope** (carries verification flags), **Category**. The "How to use" tab documents its own rules. Optional — the bundled master already reflects the matrix's verification decisions; use the matrix only when you need to double-check a flag or find the ATS tab.
+3. **ATS feedback** — from the matrix's **"ATS result" tab** if present, otherwise a pasted or uploaded ATS report for this JD. This is per-JD and changes every run.
+4. **The JD** — pasted text, a file, or a URL.
 
-- Structure resumes for optimal readability
-- Ensure ATS compatibility through formatting
-- Create visual hierarchy
-- Optimize white space and margins
-- Select appropriate fonts and sizes
-- Balance aesthetic appeal with functionality
+The bundled master is always available. If the **JD** or the **ATS feedback** is missing, stop and ask — do not invent them.
 
-## Formatting Fundamentals
+## Keeping the bundled master current
 
-### The Dual Audience Challenge
+`assets/Bhargavi-master.tex` is a snapshot from when the skill was packaged. When the master resume changes, replace that file and re-package the skill — or simply attach the newer master when running the skill, since an attached file takes precedence. This keeps the skill from ever tailoring off a stale master.
 
-Your resume must work for:
-1. **ATS (Applicant Tracking Systems)** - Robots that parse text
-2. **Human Readers** - Recruiters who scan quickly
+## Non-negotiables
 
-**The Solution:** Clean, simple formatting that satisfies both.
+These come from repeated corrections. Break one and the draft gets rejected, because the candidate checks every line against ground truth.
 
-## Document Setup
+- **Removal is the only operation — in BOTH the experience and skills sections.** Never rephrase, reword, merge, shorten, add to, reorder, or otherwise edit any experience bullet or any skill. Take each one verbatim from the master and either keep it exactly or delete it. Tailoring is purely subtractive; that is what guarantees the output can't drift or fabricate. (Any dynamic *additions* to skills happen through a separate process, not through this skill.)
+- **Zero fabrication.** Every bullet, number, and skill must exist in the master or matrix. No invented metrics, no invented scope, no swapped tech stacks.
+- **Keep true numbers intact.** Never inflate, and never drop a real-but-undersold number (e.g. 560ms→100ms, 42% complaint reduction, 2M profiles, $450K savings). If a prior draft weakened one, restore it.
+- **Respect matrix verification flags.** A yellow Scope cell, a `?`, or "UNVERIFIED" means the missing claim is not backed. Do not assert it — no "led," no adoption counts, no team sizes — unless it has since been confirmed.
+- **Behavioral-only rows never appear on the resume** (the matrix rows tagged "never on resume": mentoring, incorporating feedback, pushing back). They are interview material only.
+- **The MCP observability agent is a prototype, not deployed.** Never claim deployment or attach a fabricated metric to it.
+- **Header facts are fixed.** Name, contact, titles, locations, education, and dates come straight from the master. Don't alter them to fit the JD.
 
-### Page Length
-- **Entry Level (0-5 years):** 1 page
-- **Mid-Level (5-15 years):** 1-2 pages
-- **Senior/Executive (15+ years):** 2 pages (max 3 for executives)
+## Step 1 — Apply ATS-result feedback
 
-### Margins
-- **Recommended:** 0.5" - 1" all sides
-- **Minimum:** 0.5" (don't go smaller)
-- **Maximum:** 1" (don't waste space)
+Open the ATS feedback. It lists lines to remove, weak or duplicate bullets, missing keywords, and keywords already present. Then:
 
-### Font Selection
+- Cut the lines it flags for removal.
+- Before cutting a line, check whether it is the **only carrier** of a target keyword the ATS wants. If so, **keep the whole line verbatim** — removal is optional per line, but editing a line to preserve a keyword is never allowed.
+- Prefer cutting **redundancy** (two bullets making the same point — the weaker one goes) over cutting a bullet that holds a unique keyword or a strong number.
 
-**Safe, ATS-Friendly Fonts:**
-- **Sans-serif:** Arial, Calibri, Helvetica, Verdana
-- **Serif:** Times New Roman, Georgia, Garamond
+The result is fewer bullets that still carry every target keyword and the strongest verified work — same wording as the master, just a subset of the lines.
 
-**Font Sizes:**
-- **Name:** 16-20pt
-- **Section Headers:** 12-14pt
-- **Body Text:** 10-12pt
-- **Minimum readable:** 10pt
+## Step 2 — Write the skills section from the JD
 
-### Spacing
-- **Line spacing:** 1.0 to 1.15
-- **Space after paragraphs:** 6-12pt
-- **Section spacing:** 12-16pt between sections
+The skills section is **retained from the master and pruned — removal only.** Do not add, reword, or regroup skills; any dynamic additions are handled by a separate process, outside this skill.
 
-## ATS-Safe Formatting Rules
+- Read the JD's required and preferred tech, tools, and platforms.
+- From the master skills list, **keep** the entries the JD calls for, plus closely adjacent ones already in the master that the JD's domain implies (JD says "event-driven" → keep Kafka, Azure Service Bus; "caching" → keep Redis). **Remove** everything the JD doesn't care about so the block stays targeted.
+- Never add a skill that isn't already in the master, even if the JD asks for it — a missing requirement goes in the gap list (Output), not on the resume.
+- Keep the surviving entries **exactly as written** in the master: verbatim tool names, existing categories, existing order. The block is a subset of the master skills, nothing more.
 
-### DO:
-- ✅ Use standard fonts
-- ✅ Use simple bullet points (•, -, *)
-- ✅ Use bold and italic sparingly
-- ✅ Use standard section headers
-- ✅ Save as .docx or text-based .pdf
-- ✅ Put contact info in body (not header)
-- ✅ Use single column layout
-- ✅ Use consistent formatting throughout
+## Step 3 — Select bullets by matching JD verbs to the verb bank
 
-### DON'T:
-- ❌ Use tables (except simple ones for contact info)
-- ❌ Use text boxes
-- ❌ Use columns (multi-column layouts)
-- ❌ Use headers/footers for important info
-- ❌ Use images or graphics
-- ❌ Use unusual fonts
-- ❌ Use skill bars or progress indicators
-- ❌ Use special characters or emojis
-- ❌ Use color for essential information
+- Read the JD's responsibilities and classify their emphasis into the seven categories below. A JD heavy on "partner, coordinate, communicate" → **Communication**; on "design, build, own delivery" → **Creative + Leadership**; on "optimize, debug, analyze" → **Research + Management**.
+- For each emphasized category, include that category's bullets from the master, taken from the roles the bank assigns.
+- Keep **one Communication verb per role**, **never repeat a verb** across the resume, and prefer bullets that also carry the JD's target keywords (Step 2) and a real number.
+- Trim each role to fit one page — roughly **5–7 Rocket, 4–5 SDE II, 3–4 SDE I** — by removing the least JD-relevant bullets and keeping the survivors in their **master order** (no reordering).
 
-## Section Organization
+### The verb bank
 
-### Standard Section Order
+Each lead verb corresponds to a specific master bullet (master bullets start with these verbs). This is the selection index: emphasized category → its verbs → pull those bullets.
 
-```
-1. Contact Information
-2. Professional Summary (optional)
-3. Skills/Technical Skills
-4. Professional Experience
-5. Education
-6. Certifications (if relevant)
-7. Additional (volunteer, languages, etc.)
-```
+| Category | Verbs |
+| --- | --- |
+| Communication | Addressed, Collaborated, Resolved |
+| Creative | Created, Designed, Developed, Published, Integrated |
+| Leadership | Advocated, Contributed, Demonstrated, Launched, Volunteered, Led |
+| Management | Accelerated, Accomplished, Achieved, Emphasized, Enforced, Exceeded, Expanded, Coordinated, Implemented, Improved, Initiated, Managed, Refactored, Reviewed, Streamlined |
+| Technical | Maintained, Adapted, Built, Fortified, Rectified, Revamped, Standardized, Upgraded |
+| Organization | Monitored, Validated, Verified, Compiled |
+| Research | Identified, Evaluated, Diagnosed, Assessed, Determined, Explored, Investigated, Measured, Solved, Tested |
 
-### Section Header Formatting
+Flagship bullets in the master that fall outside this bank (e.g. **Owned** end-to-end delivery, **Achieved** 100% event recovery) are always-strong anchors — use them to lead a role or fill space regardless of category, without reusing their verb elsewhere.
 
-**ATS-Recognized Headers:**
-- PROFESSIONAL EXPERIENCE or WORK EXPERIENCE
-- EDUCATION
-- SKILLS or TECHNICAL SKILLS
-- PROFESSIONAL SUMMARY or SUMMARY
-- CERTIFICATIONS
-- PROJECTS
+## Bullet format (reference only — the skill never writes or edits bullets)
 
-**Format Options:**
-```
-PROFESSIONAL EXPERIENCE
-━━━━━━━━━━━━━━━━━━━━━━
+Every master bullet already follows this shape:
 
-or
+**Action verb + responsibility + business (one word) + problem + stack + number** — one compound sentence, numbers in the sentence, no em-dashes or arrows.
 
-Professional Experience
-_______________________
+Because tailoring is removal-only, the skill never authors, rewrites, merges, or trims a bullet. Bullets are taken from the master **verbatim** and either kept or dropped. This section exists so you can recognize the shape, not to edit toward it.
 
-or
+## Output
 
-PROFESSIONAL EXPERIENCE
+1. A one-page `.tex` using the master's exact preamble/template, plus the compiled PDF.
+2. A short **match report** (standing format):
+   - **Keyword match** — highlight only **10/10 (100%)** matches between the candidate's work and the JD.
+   - **Competitive rank**, **applicant-volume estimate** (assume 5 hours since posting unless stated otherwise), and **funnel position**.
+   - **Gap list** — JD-required skills the candidate does not have, kept off the resume and surfaced here so they can decide how to address them.
+
+Keep the report neatly spaced with clear sections — no dense walls of text.
+
+## Compile and verify
+
+Run twice, then render page 1 and confirm it fits one page with nothing overflowing:
+
+```bash
+pdflatex -interaction=nonstopmode -halt-on-error <file>.tex
+pdflatex -interaction=nonstopmode -halt-on-error <file>.tex
+pdftoppm -png -r 120 -f 1 -l 1 <file>.pdf check
 ```
 
-## Contact Information Layout
+Escape literal `%` as `\%`, `$` as `\$`, `&` as `\&`; use `$\times$` for `×` and math mode (`$R^2$`, `$\mu$g/m$^3$`) for superscripts and Greek.
 
-### Recommended Format
-```
-JOHN SMITH
-john.smith@email.com | (555) 123-4567 | linkedin.com/in/johnsmith
-San Francisco, CA
-```
+## Worked example (compressed)
 
-### Alternative Format
-```
-JOHN SMITH
-San Francisco, CA
-john.smith@email.com | (555) 123-4567
-LinkedIn: linkedin.com/in/johnsmith | GitHub: github.com/johnsmith
-```
+**JD:** Java, Spring Boot, Kafka; "own reliability of event pipelines"; "partner with cross-functional teams."
 
-### What to Include
-- ✅ Full name
-- ✅ Professional email
-- ✅ Phone number
-- ✅ City, State (no full address needed)
-- ✅ LinkedIn URL
-- ✅ Portfolio/GitHub (if relevant)
+- **Skills written:** Languages (Java, TypeScript, SQL) · Backend (Spring Boot WebFlux, REST, OpenAPI, Node.js) · Messaging & Data (Kafka, Azure Service Bus, Redis, MongoDB) · Cloud & DevOps (Docker, GitHub Actions, New Relic). Frontend trimmed to one line or dropped.
+- **Verbs pulled:** Fortified + Achieved (event pipeline, DLQ) · Refactored + Enforced + Standardized (backend correctness) · Monitored + Verified (reliability) · Collaborated (the one Communication bullet, cross-team). Frontend Creative bullets (loan-officer page) dropped as off-target.
+- **Report:** keyword match highlights Kafka / Spring Boot / Azure Service Bus / Redis as 10/10; plus rank, volume, funnel; gap list flags anything the JD requires that's absent (e.g. Terraform).
 
-### What to Exclude
-- ❌ Full street address
-- ❌ Photo
-- ❌ Date of birth
-- ❌ Marital status
-- ❌ Multiple phone numbers
-- ❌ Personal social media
+## When NOT to use
 
-## Experience Section Formatting
-
-### Standard Format
-```
-COMPANY NAME | City, ST
-Job Title | Month Year - Month Year
-
-• Achievement bullet with metrics and results
-• Achievement bullet with metrics and results
-• Achievement bullet with metrics and results
-```
-
-### Alternative Format
-```
-Job Title
-COMPANY NAME, City, ST                    Month Year - Month Year
-
-• Achievement bullet with metrics and results
-• Achievement bullet with metrics and results
-```
-
-### Date Formatting
-- **Consistent format:** Use same format throughout
-- **Recommended:** Month Year (Jan 2020 - Present)
-- **Also acceptable:** MM/YYYY (01/2020 - Present)
-- **Avoid:** Full dates (January 15, 2020)
-
-### Bullet Point Guidelines
-- **Length:** 1-2 lines each
-- **Format:** Start with action verb, end with result
-- **Quantity:** 3-6 bullets per role (more for recent, fewer for old)
-- **Symbol:** Use standard bullets (•, -, *)
-
-## Skills Section Formatting
-
-### Option 1: Simple List
-```
-SKILLS
-Python, JavaScript, SQL, React, Node.js, AWS, Docker, Git, Agile, JIRA
-```
-
-### Option 2: Categorized
-```
-TECHNICAL SKILLS
-Languages: Python, JavaScript, TypeScript, SQL
-Frameworks: React, Node.js, Django, Flask
-Tools: AWS, Docker, Kubernetes, Git, Jenkins
-```
-
-### Option 3: Columns (Careful with ATS)
-```
-SKILLS
-Languages        Frameworks       Tools
-Python           React            AWS
-JavaScript       Node.js          Docker
-SQL              Django           Git
-```
-
-**Note:** Multi-column layouts may cause ATS issues. Test before using.
-
-## Education Section Formatting
-
-### Standard Format
-```
-EDUCATION
-Bachelor of Science in Computer Science
-University of California, Berkeley | 2018
-GPA: 3.8/4.0 (include if 3.5+)
-```
-
-### With Honors/Details
-```
-EDUCATION
-MBA, Finance & Strategy | Stanford Graduate School of Business | 2020
-• Graduated with Distinction
-• Relevant Coursework: Corporate Finance, M&A Strategy
-```
-
-## Visual Hierarchy Principles
-
-### Hierarchy Order
-1. **Name** - Largest, most prominent
-2. **Section Headers** - Clear divisions
-3. **Job Titles/Company Names** - Easy to scan
-4. **Bullet Points** - The details
-
-### Creating Hierarchy
-- Use font SIZE to create levels
-- Use **BOLD** for emphasis (names, titles, headers)
-- Use CAPS for section headers
-- Use consistent spacing to separate sections
-
-## White Space Management
-
-### Good White Space:
-- Between sections (clear separation)
-- After headings (visual breathing room)
-- Between bullets (don't cram)
-- Around margins (frame the content)
-
-### Bad White Space:
-- Huge gaps between sections
-- Inconsistent spacing
-- Half-empty pages
-- Excessive margins eating space
-
-## Common Formatting Mistakes
-
-### Mistake 1: Wall of Text
-**Problem:** Dense paragraphs with no bullets
-**Solution:** Use bullet points, keep paragraphs short
-
-### Mistake 2: Inconsistent Formatting
-**Problem:** Different fonts, sizes, or styles throughout
-**Solution:** Pick one format and stick to it
-
-### Mistake 3: Trying to Be Creative
-**Problem:** Fancy designs that break ATS
-**Solution:** Save creativity for portfolio, not resume
-
-### Mistake 4: Too Much Information
-**Problem:** Cramming everything onto one page
-**Solution:** Edit ruthlessly, prioritize relevance
-
-### Mistake 5: Not Enough Information
-**Problem:** Half-page resume with massive margins
-**Solution:** Add detail, reduce margins (to 0.5")
-
-## File Format Guidelines
-
-### For Online Applications
-- **.docx** - Best for ATS parsing
-- **.pdf** - Good if created from Word (not scanned)
-
-### For Email/Direct Send
-- **.pdf** - Preserves formatting
-
-### File Naming
-```
-FirstName_LastName_Resume.pdf
-JohnSmith_Resume_ProductManager.pdf
-```
-
-**Avoid:**
-- resume_final_v2_updated_FINAL.docx
-- resume (1).pdf
-- Untitled document.docx
-
-## Output Format
-
-When formatting a resume:
-
-```markdown
-# RESUME FORMATTING REVIEW
-
-## Current Issues
-- [ ] [Issue 1]
-- [ ] [Issue 2]
-- [ ] [Issue 3]
-
-## Recommended Changes
-
-### Document Setup
-- Margins: [Current] → [Recommended]
-- Font: [Current] → [Recommended]
-- Font sizes: [Current] → [Recommended]
-
-### Section Order
-**Current:** [Current order]
-**Recommended:** [New order and why]
-
-### Visual Improvements
-- [Specific change 1]
-- [Specific change 2]
-
-### ATS Compatibility Fixes
-- [Fix 1]
-- [Fix 2]
-
-## Before/After Preview
-
-### Before:
-[Description or example of current formatting]
-
-### After:
-[Description or example of improved formatting]
-```
-
-## Quick Formatting Checklist
-
-Before submitting any resume:
-- ✅ One page (or two if warranted)
-- ✅ Standard font (10-12pt body)
-- ✅ Consistent formatting throughout
-- ✅ Clear section headers
-- ✅ Appropriate white space
-- ✅ No tables, text boxes, or columns
-- ✅ Contact info in body (not header)
-- ✅ Saved as .docx or .pdf
-- ✅ Proper file name
-- ✅ Proofread for consistency
+- Building or editing the master resume itself.
+- Generic resume advice with no JD attached.
+- Any non-resume task.

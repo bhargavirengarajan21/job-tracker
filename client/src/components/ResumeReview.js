@@ -1,68 +1,94 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../api';
 
-const SOFT_SKILL_VERBS = {
-  communication:      ['Presented', 'Conveyed', 'Articulated', 'Facilitated', 'Briefed', 'Negotiated', 'Liaised', 'Corresponded'],
-  leadership:         ['Led', 'Directed', 'Mentored', 'Spearheaded', 'Championed', 'Motivated', 'Guided', 'Empowered'],
-  teamwork:           ['Collaborated', 'Partnered', 'Coordinated', 'Contributed', 'Unified', 'Supported', 'Integrated', 'Aligned'],
-  collaboration:      ['Collaborated', 'Partnered', 'Coordinated', 'Contributed', 'Unified', 'Supported', 'Integrated', 'Aligned'],
-  'problem solving':  ['Resolved', 'Diagnosed', 'Troubleshot', 'Engineered', 'Devised', 'Streamlined', 'Optimized', 'Mitigated'],
-  'problem-solving':  ['Resolved', 'Diagnosed', 'Troubleshot', 'Engineered', 'Devised', 'Streamlined', 'Optimized', 'Mitigated'],
-  adaptability:       ['Pivoted', 'Adapted', 'Transitioned', 'Overhauled', 'Revamped', 'Restructured', 'Adjusted', 'Flexed'],
-  flexibility:        ['Pivoted', 'Adapted', 'Transitioned', 'Adjusted', 'Revamped', 'Restructured', 'Overhauled', 'Flexed'],
-  'time management':  ['Prioritized', 'Executed', 'Delivered', 'Scheduled', 'Expedited', 'Managed', 'Completed', 'Met'],
-  'critical thinking':['Evaluated', 'Assessed', 'Synthesized', 'Investigated', 'Forecasted', 'Interpreted', 'Examined', 'Analyzed'],
-  analytical:         ['Analyzed', 'Evaluated', 'Assessed', 'Synthesized', 'Forecasted', 'Interpreted', 'Examined', 'Modeled'],
-  creativity:         ['Pioneered', 'Innovated', 'Conceptualized', 'Designed', 'Created', 'Introduced', 'Developed', 'Crafted'],
-  innovation:         ['Pioneered', 'Innovated', 'Conceptualized', 'Launched', 'Introduced', 'Engineered', 'Transformed', 'Reimagined'],
-  'attention to detail': ['Audited', 'Validated', 'Verified', 'Reviewed', 'Ensured', 'Inspected', 'Monitored', 'Proofread'],
-  mentoring:          ['Mentored', 'Coached', 'Trained', 'Guided', 'Developed', 'Onboarded', 'Advised', 'Nurtured'],
-  coaching:           ['Coached', 'Mentored', 'Trained', 'Guided', 'Developed', 'Advised', 'Empowered', 'Nurtured'],
-  organization:       ['Organized', 'Systematized', 'Cataloged', 'Consolidated', 'Restructured', 'Coordinated', 'Maintained', 'Streamlined'],
-  'conflict resolution': ['Mediated', 'Reconciled', 'Resolved', 'De-escalated', 'Facilitated', 'Arbitrated', 'Negotiated', 'Settled'],
-  negotiation:        ['Negotiated', 'Mediated', 'Brokered', 'Secured', 'Persuaded', 'Arbitrated', 'Facilitated', 'Settled'],
-  initiative:         ['Initiated', 'Launched', 'Established', 'Proposed', 'Drove', 'Volunteered', 'Pioneered', 'Championed'],
-  'self-motivated':   ['Initiated', 'Drove', 'Launched', 'Established', 'Proposed', 'Volunteered', 'Pioneered', 'Championed'],
-  planning:           ['Planned', 'Strategized', 'Designed', 'Architected', 'Formulated', 'Mapped', 'Forecasted', 'Orchestrated'],
-  strategy:           ['Strategized', 'Architected', 'Formulated', 'Designed', 'Planned', 'Orchestrated', 'Envisioned', 'Shaped'],
-  'customer focus':   ['Supported', 'Assisted', 'Resolved', 'Engaged', 'Retained', 'Satisfied', 'Addressed', 'Cultivated'],
-  'customer service': ['Supported', 'Assisted', 'Resolved', 'Engaged', 'Retained', 'Satisfied', 'Addressed', 'Cultivated'],
-  interpersonal:      ['Built', 'Cultivated', 'Fostered', 'Strengthened', 'Established', 'Developed', 'Maintained', 'Nurtured'],
-  'cross-functional': ['Aligned', 'Integrated', 'Bridged', 'Unified', 'Coordinated', 'Partnered', 'Collaborated', 'Facilitated'],
-  presentation:       ['Presented', 'Delivered', 'Demonstrated', 'Showcased', 'Pitched', 'Illustrated', 'Communicated', 'Briefed'],
-  'decision making':  ['Determined', 'Approved', 'Recommended', 'Evaluated', 'Prioritized', 'Selected', 'Authorized', 'Directed'],
-  'work ethic':       ['Delivered', 'Executed', 'Completed', 'Maintained', 'Sustained', 'Committed', 'Upheld', 'Exceeded'],
-  empathy:            ['Supported', 'Advocated', 'Engaged', 'Listened', 'Cultivated', 'Fostered', 'Assisted', 'Connected'],
-  'active listening': ['Gathered', 'Synthesized', 'Incorporated', 'Responded', 'Assessed', 'Clarified', 'Identified', 'Documented'],
-};
-
-function getActionWords(softSkills) {
-  if (!softSkills?.length) return [];
-  const seen = new Set();
-  return softSkills.flatMap(skill => {
-    const key = skill.toLowerCase();
-    for (const [pattern, verbs] of Object.entries(SOFT_SKILL_VERBS)) {
-      if (key.includes(pattern) || pattern.includes(key)) {
-        return [{ skill, verbs: verbs.filter(v => !seen.has(v) && seen.add(v)) }];
-      }
-    }
-    return [];
-  }).filter(item => item.verbs.length > 0);
-}
-
-function ResumeReview({ atsContext, onSwitchToATS }) {
-  const [masterResume, setMasterResume] = useState(null);
-  const [generating, setGenerating] = useState(false);
-  const [changeLog, setChangeLog] = useState(null);
+function ResumeReview({ atsContext, onSwitchToATS, preloadedResume }) {
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [compiling, setCompiling] = useState(false);
+  const [scoring, setScoring] = useState(false);
+  const [changeList, setChangeList] = useState(null);
+  const [tailoredTex, setTailoredTex] = useState(null);
+  const [texFilename, setTexFilename] = useState('tailored_resume.tex');
+  const [changeSummary, setChangeSummary] = useState(null);
+  const [pdfUrl, setPdfUrl] = useState(null);
+  const [tailoredScore, setTailoredScore] = useState(null);
+  const [tailoredDemonstrated, setTailoredDemonstrated] = useState(null);
   const [outreach, setOutreach] = useState(null);
   const [generatingOutreach, setGeneratingOutreach] = useState(false);
-  const [addingApp, setAddingApp] = useState(false);
-  const [appAdded, setAppAdded] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState('');
   const [activeTab, setActiveTab] = useState('generate');
+  const [enhancing, setEnhancing] = useState(false);
+  const [enhanceChanges, setEnhanceChanges] = useState(null);
+  const preloadedRef = useRef(null);
 
-  // No ATS scan done yet
+  // When preloaded resume data arrives from background ATS scan, consume it immediately
+  useEffect(() => {
+    if (!preloadedResume || !preloadedResume.tailoredTex) return;
+    // Avoid re-processing the same preload
+    if (preloadedResume === preloadedRef.current) return;
+    preloadedRef.current = preloadedResume;
+
+    setChangeList(preloadedResume.changeList || []);
+    setTailoredTex(preloadedResume.tailoredTex);
+    setTexFilename(preloadedResume.filename || 'tailored_resume.tex');
+    setChangeSummary(preloadedResume.summary);
+    setError('');
+
+    // Use pre-compiled PDF and pre-computed score from the stream if available
+    if (preloadedResume.pdfBase64) {
+      try {
+        const binaryStr = atob(preloadedResume.pdfBase64);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+        const blob = new Blob([bytes], { type: 'application/pdf' });
+        setPdfUrl(URL.createObjectURL(blob));
+      } catch {}
+    }
+
+    if (preloadedResume.tailoredScore != null) {
+      setTailoredScore(preloadedResume.tailoredScore);
+      setTailoredDemonstrated(preloadedResume.tailoredDemonstrated);
+    }
+
+    // If PDF wasn't pre-compiled, compile now; same for score
+    const needsPdf = !preloadedResume.pdfBase64;
+    const needsScore = preloadedResume.tailoredScore == null;
+
+    if (needsPdf || needsScore) {
+      setCompiling(needsPdf);
+      setScoring(needsScore);
+
+      const promises = [];
+      if (needsPdf) {
+        promises.push(
+          api.post('/ats/compile-tex', {
+            texContent: preloadedResume.tailoredTex,
+            filename: preloadedResume.filename || 'tailored_resume',
+          }, { responseType: 'blob' }).then(res => {
+            const blob = new Blob([res.data], { type: 'application/pdf' });
+            setPdfUrl(URL.createObjectURL(blob));
+          }).catch(() => {})
+        );
+      }
+      if (needsScore) {
+        promises.push(
+          api.post('/ats/score-tailored', {
+            texContent: preloadedResume.tailoredTex,
+            jobDescription: atsContext.jobDescription,
+          }).then(res => {
+            setTailoredScore(res.data.score);
+            setTailoredDemonstrated(res.data.demonstratedScore);
+          }).catch(() => {})
+        );
+      }
+
+      Promise.all(promises).then(() => {
+        setCompiling(false);
+        setScoring(false);
+      });
+    }
+  }, [preloadedResume, atsContext]);
+
   if (!atsContext) {
     return (
       <div className="empty-state" style={{ padding: '60px 20px' }}>
@@ -80,69 +106,138 @@ function ResumeReview({ atsContext, onSwitchToATS }) {
   const scoreColor = atsContext.score >= 70 ? '#16a34a' : atsContext.score >= 40 ? '#d97706' : '#dc2626';
   const scoreBg = atsContext.score >= 70 ? '#dcfce7' : atsContext.score >= 40 ? '#fef3c7' : '#fee2e2';
 
-  const handleGenerate = async () => {
-    if (!masterResume) { setError('Please upload your master resume (DOCX recommended)'); return; }
-    setGenerating(true);
+  const handlePreview = async () => {
+    setPreviewLoading(true);
     setError('');
-    setChangeLog(null);
-    setAppAdded(false);
-
-    // Fold "demonstrated but keyword missing" skills into what gets added to the resume —
-    // required ones are already in missingRequired; add the preferred ones to missingPreferred
-    // (dedup by keyword) so the literal term lands in the skills section for a strict ATS.
-    const preferredKeys = new Set((atsContext.missingPreferred || []).map(k => (k.keyword || k || '').toLowerCase()));
-    const demonstratedPreferred = (atsContext.demonstratedMissing || [])
-      .filter(k => k.priority !== 'required' && !preferredKeys.has((k.keyword || '').toLowerCase()));
-    const missingPreferredMerged = [...(atsContext.missingPreferred || []), ...demonstratedPreferred];
-
-    const formData = new FormData();
-    formData.append('resume', masterResume);
-    formData.append('company', atsContext.company || '');
-    formData.append('position', atsContext.position || '');
-    formData.append('missingRequiredJson', JSON.stringify(atsContext.missingRequired || []));
-    formData.append('missingPreferredJson', JSON.stringify(missingPreferredMerged));
-    formData.append('linesToRemoveJson', JSON.stringify(atsContext.linesToRemove || []));
-    formData.append('skillsToRemoveJson', JSON.stringify(atsContext.skillsToRemove || []));
-    formData.append('grammarFixesJson', JSON.stringify(atsContext.grammarFixes || []));
-    // Pass JD as fallback in case keywords are empty
-    if (atsContext.jobDescription) formData.append('jobDescription', atsContext.jobDescription);
+    setChangeList(null);
+    setTailoredTex(null);
+    setChangeSummary(null);
+    setPdfUrl(null);
+    setTailoredScore(null);
+    setTailoredDemonstrated(null);
 
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:5000/api/ats/generate', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData
+      const { data } = await api.post('/ats/preview-tex', {
+        jobDescription: atsContext.jobDescription,
+        company: atsContext.company,
+        position: atsContext.position,
+        linesToRemove: atsContext.linesToRemove || [],
+        skillsToRemove: atsContext.skillsToRemove || [],
+        missingRequired: atsContext.missingRequired || [],
+        missingPreferred: atsContext.missingPreferred || [],
+        transferableSkills: atsContext.transferableSkills || [],
       });
+      setChangeList(data.changeList || []);
+      setTailoredTex(data.tailoredTex);
+      setTexFilename(data.filename || 'tailored_resume.tex');
+      setChangeSummary(data.summary);
 
-      if (!response.ok) {
-        const text = await response.text();
-        try { setError(JSON.parse(text).error || 'Generation failed'); }
-        catch { setError('Generation failed'); }
-        return;
+      if (data.tailoredTex) {
+        // Score the tailored resume + compile PDF in parallel
+        setCompiling(true);
+        setScoring(true);
+
+        const pdfPromise = api.post('/ats/compile-tex', {
+          texContent: data.tailoredTex,
+          filename: data.filename || 'tailored_resume',
+        }, { responseType: 'blob' }).then(res => {
+          const blob = new Blob([res.data], { type: 'application/pdf' });
+          setPdfUrl(URL.createObjectURL(blob));
+        }).catch(() => {});
+
+        const scorePromise = api.post('/ats/score-tailored', {
+          texContent: data.tailoredTex,
+          jobDescription: atsContext.jobDescription,
+        }).then(res => {
+          setTailoredScore(res.data.score);
+          setTailoredDemonstrated(res.data.demonstratedScore);
+        }).catch(() => {});
+
+        await Promise.all([pdfPromise, scorePromise]);
+        setCompiling(false);
+        setScoring(false);
       }
-
-      const blob = await response.blob();
-      const logHeader = response.headers.get('x-change-log');
-      // Server URI-encodes this header (it may contain →, —, etc. that are illegal in headers).
-      const decodeLog = (h) => { try { return JSON.parse(decodeURIComponent(h)); } catch { try { return JSON.parse(h); } catch { return []; } } };
-      setChangeLog(logHeader ? decodeLog(logHeader) : []);
-
-      const filename = [atsContext.company, atsContext.position, 'resume']
-        .filter(Boolean).join('_').replace(/\s+/g, '_') || 'tailored_resume';
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${filename}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
     } catch (err) {
-      setError('Generation failed: ' + err.message);
+      setError(err.response?.data?.error || 'Failed to generate preview');
     } finally {
-      setGenerating(false);
+      setPreviewLoading(false);
+      setCompiling(false);
+      setScoring(false);
     }
+  };
+
+  const handleEnhance = async () => {
+    if (!tailoredTex || !atsContext) return;
+    setEnhancing(true);
+    setError('');
+    setEnhanceChanges(null);
+    try {
+      const { data } = await api.post('/ats/enhance-tex', {
+        texContent: tailoredTex,
+        jobDescription: atsContext.jobDescription,
+        missingRequired: atsContext.missingRequired || [],
+        missingPreferred: atsContext.missingPreferred || [],
+      });
+      if (data.enhancedTex) {
+        setTailoredTex(data.enhancedTex);
+        setEnhanceChanges(data.changes);
+        // Re-compile PDF with enhanced tex
+        setCompiling(true);
+        try {
+          const pdfRes = await api.post('/ats/compile-tex', {
+            texContent: data.enhancedTex,
+            filename: texFilename.replace(/\.tex$/, ''),
+          }, { responseType: 'blob' });
+          if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+          const blob = new Blob([pdfRes.data], { type: 'application/pdf' });
+          setPdfUrl(URL.createObjectURL(blob));
+        } catch {}
+        setCompiling(false);
+        // Re-score
+        if (data.newScore) {
+          setTailoredScore(data.newScore.score);
+          setTailoredDemonstrated(data.newScore.demonstratedScore);
+        }
+      }
+    } catch (err) {
+      setError(err.response?.data?.error || 'Enhancement failed');
+    } finally {
+      setEnhancing(false);
+    }
+  };
+
+  const handleDownloadTex = () => {
+    if (!tailoredTex) return;
+    const blob = new Blob([tailoredTex], { type: 'application/x-tex' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = texFilename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadPdf = () => {
+    if (!pdfUrl) return;
+    const a = document.createElement('a');
+    a.href = pdfUrl;
+    a.download = texFilename.replace(/\.tex$/, '.pdf');
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const handleDiscard = () => {
+    if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+    setChangeList(null);
+    setTailoredTex(null);
+    setChangeSummary(null);
+    setPdfUrl(null);
+    setTailoredScore(null);
+    setTailoredDemonstrated(null);
+    setError('');
   };
 
   const handleGenerateOutreach = async () => {
@@ -152,7 +247,7 @@ function ResumeReview({ atsContext, onSwitchToATS }) {
       const { data } = await api.post('/ats/outreach', {
         jobDescription: atsContext.jobDescription,
         company: atsContext.company,
-        position: atsContext.position
+        position: atsContext.position,
       });
       setOutreach(data);
       setActiveTab('outreach');
@@ -160,25 +255,6 @@ function ResumeReview({ atsContext, onSwitchToATS }) {
       setError(err.response?.data?.error || 'Outreach generation failed');
     } finally {
       setGeneratingOutreach(false);
-    }
-  };
-
-  const handleAddToApplications = async () => {
-    setAddingApp(true);
-    try {
-      await api.post('/applications', {
-        company: atsContext.company || 'Unknown',
-        position: atsContext.position || 'Unknown',
-        status: 'applied',
-        ats_score: atsContext.score || '',
-        job_url: '',
-        notes: `ATS Score: ${atsContext.score || 'N/A'}%. Generated tailored resume.`
-      });
-      setAppAdded(true);
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed to add application');
-    } finally {
-      setAddingApp(false);
     }
   };
 
@@ -246,189 +322,292 @@ function ResumeReview({ atsContext, onSwitchToATS }) {
 
       {/* Generate Tab */}
       {activeTab === 'generate' && (
-        <div style={{ maxWidth: 520 }}>
-          {/* Missing skills preview */}
-          {atsContext.missingRequired?.length > 0 && (
+        <div>
+          <p style={{ fontSize: '0.85rem', color: '#555', marginBottom: 16, lineHeight: 1.6, maxWidth: 600 }}>
+            Uses your master resume (main.tex). The AI will remove irrelevant bullets, prune skills, and
+            trim each role — <strong>no text is ever reworded</strong>. Review the changes and preview below.
+          </p>
+
+          {/* Step 1: Generate button — skip if preloaded data already loaded */}
+          {!changeList && (
             <div style={{ marginBottom: 20 }}>
-              <p style={{ fontSize: '0.85rem', color: '#374151', fontWeight: 500, marginBottom: 8 }}>
-                These required skills will be added to your resume's skills section:
-              </p>
-              <div className="keywords-list">
-                {atsContext.missingRequired.map((kw, i) => (
-                  <span key={i} style={{
-                    padding: '4px 10px', borderRadius: 14, fontSize: '0.8rem',
-                    background: '#fee2e2', color: '#dc2626', fontWeight: 500, border: '1px solid #fecaca'
-                  }}>
-                    {kw.keyword || kw}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {atsContext.missingRequired?.length === 0 && (
-            <div style={{ padding: '10px 14px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0', marginBottom: 20, fontSize: '0.85rem', color: '#16a34a' }}>
-              No required skills missing — your resume already covers this role.
-            </div>
-          )}
-
-          {/* Demonstrated but keyword missing — literal terms to add so a strict ATS credits them */}
-          {atsContext.demonstratedMissing?.length > 0 && (
-            <div style={{ marginBottom: 20 }}>
-              <p style={{ fontSize: '0.85rem', color: '#374151', fontWeight: 500, marginBottom: 6 }}>
-                You <em>demonstrate</em> these, but the literal keyword is missing — the exact term will be added so a strict ATS credits you:
-              </p>
-              <div className="keywords-list">
-                {atsContext.demonstratedMissing.map((kw, i) => (
-                  <span key={i} title={kw.matchedAs ? `Demonstrated via "${kw.matchedAs}"` : ''} style={{
-                    padding: '4px 10px', borderRadius: 14, fontSize: '0.8rem',
-                    background: '#fffbeb', color: '#92400e', fontWeight: 500, border: '1px solid #fde68a'
-                  }}>
-                    {kw.keyword || kw}
-                    {kw.priority === 'required' && <span style={{ marginLeft: 4, fontSize: '0.62rem', fontWeight: 700, opacity: 0.8 }}>REQ</span>}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Irrelevant skills to remove preview */}
-          {atsContext.skillsToRemove?.length > 0 && (
-            <div style={{ marginBottom: 16 }}>
-              <p style={{ fontSize: '0.85rem', color: '#374151', fontWeight: 500, marginBottom: 6 }}>
-                Skills that will be stripped from your skills section (don't add value for this role):
-              </p>
-              <div className="keywords-list">
-                {atsContext.skillsToRemove.map((skill, i) => (
-                  <span key={i} style={{
-                    padding: '4px 10px', borderRadius: 14, fontSize: '0.8rem',
-                    background: '#fff1f2', color: '#dc2626', fontWeight: 500,
-                    border: '1px solid #fecaca', textDecoration: 'line-through'
-                  }}>
-                    {skill}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Lines to remove preview */}
-          {atsContext.linesToRemove?.length > 0 && (
-            <div style={{ marginBottom: 16 }}>
-              <p style={{ fontSize: '0.85rem', color: '#374151', fontWeight: 500, marginBottom: 6 }}>
-                Lines that will be removed (irrelevant / no value for this role):
-              </p>
-              {atsContext.linesToRemove.map((line, i) => (
-                <div key={i} style={{ fontSize: '0.78rem', color: '#dc2626', background: '#fff1f2', border: '1px solid #fecaca', borderRadius: 6, padding: '4px 10px', marginBottom: 4 }}>
-                  {line.length > 100 ? line.substring(0, 100) + '…' : line}
+              {preloadedResume ? (
+                <div style={{
+                  padding: '14px 18px', borderRadius: 10,
+                  background: '#f0fdf4', border: '1px solid #bbf7d0'
+                }}>
+                  <div style={{ fontWeight: 600, color: '#166534', fontSize: '0.95rem', marginBottom: 4 }}>
+                    Resume pre-generated from ATS scan
+                  </div>
+                  <div style={{ fontSize: '0.82rem', color: '#555' }}>
+                    Tailored resume was built in the background while you reviewed ATS results. Loading now...
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
-
-          {/* Grammar fixes preview */}
-          {atsContext.grammarFixes?.length > 0 && (
-            <div style={{ marginBottom: 16 }}>
-              <p style={{ fontSize: '0.85rem', color: '#374151', fontWeight: 500, marginBottom: 6 }}>
-                Grammar fixes that will be applied ({atsContext.grammarFixes.length}):
-              </p>
-              {atsContext.grammarFixes.slice(0, 5).map((fix, i) => (
-                <div key={i} style={{ fontSize: '0.78rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '4px 10px', marginBottom: 4 }}>
-                  <span style={{ textDecoration: 'line-through', marginRight: 6 }}>{fix.text || fix.original}</span>
-                  → {fix.fix || fix.corrected}
-                </div>
-              ))}
-              {atsContext.grammarFixes.length > 5 && (
-                <div style={{ fontSize: '0.75rem', color: '#92400e' }}>+{atsContext.grammarFixes.length - 5} more fixes</div>
+              ) : (
+                <>
+                  <button
+                    className="btn btn-primary"
+                    onClick={handlePreview}
+                    disabled={previewLoading}
+                    style={{ minWidth: 200 }}
+                  >
+                    {previewLoading ? 'Analyzing master resume...' : 'Generate Tailored Resume'}
+                  </button>
+                  {previewLoading && (
+                    <p style={{ fontSize: '0.8rem', color: '#888', marginTop: 8 }}>
+                      AI is reading your master resume, comparing against the JD, and selecting the best bullets...
+                    </p>
+                  )}
+                </>
               )}
             </div>
           )}
 
-          {/* Action words for soft skills */}
-          {(() => {
-            const actionWords = getActionWords(atsContext.softSkills);
-            return actionWords.length > 0 ? (
-              <div style={{ marginBottom: 20 }}>
-                <p style={{ fontSize: '0.85rem', color: '#374151', fontWeight: 500, marginBottom: 8 }}>
-                  Action words for soft skills in this JD:
-                </p>
-                {actionWords.map(({ skill, verbs }) => (
-                  <div key={skill} style={{ marginBottom: 10 }}>
-                    <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#1e40af', marginBottom: 4, textTransform: 'capitalize' }}>
-                      {skill}
+          {/* Step 2: Change list + PDF preview */}
+          {changeList && (
+            <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              {/* Left: changes + actions */}
+              <div style={{ flex: '1 1 340px', minWidth: 320 }}>
+                {/* Score comparison */}
+                <div style={{
+                  padding: '14px 18px', borderRadius: 10, marginBottom: 16,
+                  background: '#f0fdf4', border: '1px solid #bbf7d0'
+                }}>
+                  <h4 style={{ margin: '0 0 10px 0', color: '#166534', fontSize: '0.95rem' }}>
+                    ATS Score Comparison
+                  </h4>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{
+                        padding: '6px 14px', borderRadius: 8, fontWeight: 700, fontSize: '1.2rem',
+                        background: scoreBg, color: scoreColor
+                      }}>
+                        {atsContext.score}%
+                      </div>
+                      <div style={{ fontSize: '0.7rem', color: '#666', marginTop: 2 }}>Original</div>
                     </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                      {verbs.map(v => (
-                        <span key={v} style={{
-                          padding: '3px 10px', borderRadius: 12, fontSize: '0.77rem',
-                          background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', fontWeight: 500
-                        }}>{v}</span>
-                      ))}
+                    <div style={{ fontSize: '1.2rem', color: '#9ca3af' }}>→</div>
+                    <div style={{ textAlign: 'center' }}>
+                      {scoring ? (
+                        <div style={{
+                          padding: '6px 14px', borderRadius: 8, fontSize: '0.85rem',
+                          background: '#f1f5f9', color: '#888'
+                        }}>
+                          Scoring...
+                        </div>
+                      ) : tailoredScore != null ? (
+                        <div style={{
+                          padding: '6px 14px', borderRadius: 8, fontWeight: 700, fontSize: '1.2rem',
+                          background: tailoredScore >= 70 ? '#dcfce7' : tailoredScore >= 40 ? '#fef3c7' : '#fee2e2',
+                          color: tailoredScore >= 70 ? '#16a34a' : tailoredScore >= 40 ? '#d97706' : '#dc2626'
+                        }}>
+                          {tailoredScore}%
+                        </div>
+                      ) : (
+                        <div style={{
+                          padding: '6px 14px', borderRadius: 8, fontSize: '0.85rem',
+                          background: '#f1f5f9', color: '#888'
+                        }}>
+                          —
+                        </div>
+                      )}
+                      <div style={{ fontSize: '0.7rem', color: '#666', marginTop: 2 }}>Tailored</div>
                     </div>
+                    {tailoredScore != null && (
+                      <div style={{
+                        padding: '4px 10px', borderRadius: 8, fontSize: '0.8rem', fontWeight: 600,
+                        background: tailoredScore > atsContext.score ? '#dcfce7' : tailoredScore < atsContext.score ? '#fee2e2' : '#f1f5f9',
+                        color: tailoredScore > atsContext.score ? '#16a34a' : tailoredScore < atsContext.score ? '#dc2626' : '#666'
+                      }}>
+                        {tailoredScore > atsContext.score ? '+' : ''}{tailoredScore - atsContext.score}%
+                      </div>
+                    )}
                   </div>
-                ))}
-              </div>
-            ) : null;
-          })()}
+                </div>
 
-          <div className="form-group">
-            <label>Upload Master Resume</label>
-            <p style={{ fontSize: '0.76rem', color: '#888', marginBottom: 6, marginTop: -4 }}>
-              DOCX: your exact file is copied and only the skills section is updated. PDF: structure is rebuilt to match.
-            </p>
-            <input
-              type="file"
-              accept=".pdf,.docx"
-              onChange={e => { setMasterResume(e.target.files[0]); setChangeLog(null); setAppAdded(false); }}
-              style={{ padding: '8px 0' }}
-            />
-            {masterResume && (
-              <p style={{ fontSize: '0.85rem', color: '#666', marginTop: 4 }}>{masterResume.name}</p>
-            )}
-          </div>
+                <div style={{
+                  padding: '14px 18px', borderRadius: 10, marginBottom: 16,
+                  background: '#eff6ff', border: '1px solid #bfdbfe'
+                }}>
+                  <h4 style={{ margin: '0 0 10px 0', color: '#1d4ed8', fontSize: '0.95rem' }}>
+                    Proposed Changes ({changeList.length} total)
+                  </h4>
+                  {changeSummary && (
+                    <div style={{ display: 'flex', gap: 16, marginBottom: 10, fontSize: '0.85rem' }}>
+                      {changeSummary.removed > 0 && (
+                        <span style={{ color: '#dc2626' }}>
+                          <strong>{changeSummary.removed}</strong> lines removed
+                        </span>
+                      )}
+                      {changeSummary.pruned > 0 && (
+                        <span style={{ color: '#d97706' }}>
+                          <strong>{changeSummary.pruned}</strong> skills pruned
+                        </span>
+                      )}
+                      {changeSummary.trimmed > 0 && (
+                        <span style={{ color: '#7c3aed' }}>
+                          <strong>{changeSummary.trimmed}</strong> bullets trimmed
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  <p style={{ fontSize: '0.78rem', color: '#666', margin: 0 }}>
+                    All changes are removals only — no text was reworded or added.
+                  </p>
+                </div>
 
-          {error && <div className="error-message">{error}</div>}
+                {/* Detailed change list */}
+                <div style={{ maxHeight: 300, overflowY: 'auto', marginBottom: 16 }}>
+                  {changeList.map((change, i) => {
+                    const typeColors = {
+                      removed_bullet: { bg: '#fef2f2', border: '#fecaca', label: '#dc2626', text: 'Removed' },
+                      pruned_skill: { bg: '#fffbeb', border: '#fde68a', label: '#d97706', text: 'Pruned' },
+                      trimmed_bullet: { bg: '#f5f3ff', border: '#ddd6fe', label: '#7c3aed', text: 'Trimmed' },
+                    };
+                    const style = typeColors[change.type] || typeColors.removed_bullet;
+                    return (
+                      <div key={i} style={{
+                        padding: '8px 12px', background: style.bg, borderRadius: 6,
+                        marginBottom: 6, borderLeft: `3px solid ${style.border}`, fontSize: '0.82rem'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                          <span style={{
+                            fontSize: '0.68rem', fontWeight: 600, textTransform: 'uppercase',
+                            padding: '1px 6px', borderRadius: 8, background: style.border, color: style.label
+                          }}>
+                            {style.text}
+                          </span>
+                          <span style={{ color: '#666', fontSize: '0.76rem' }}>{change.reason}</span>
+                        </div>
+                        <div style={{ color: '#374151', lineHeight: 1.4 }}>
+                          "{change.content.length > 120 ? change.content.substring(0, 120) + '...' : change.content}"
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
 
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <button
-              className="btn btn-primary"
-              onClick={handleGenerate}
-              disabled={generating || !masterResume}
-              style={{ minWidth: 160 }}
-            >
-              {generating ? 'Generating...' : 'Generate Resume'}
-            </button>
-            <button
-              className="btn btn-secondary"
-              onClick={handleGenerateOutreach}
-              disabled={generatingOutreach || generating || !atsContext.jobDescription}
-              title={!atsContext.jobDescription ? 'Job description not available from ATS scan' : ''}
-            >
-              {generatingOutreach ? 'Generating...' : 'Generate Outreach'}
-            </button>
-          </div>
-
-          {/* Post-generate changelog + Add to Apps */}
-          {changeLog && !generating && (
-            <div style={{ marginTop: 20, padding: 14, background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <strong style={{ color: '#16a34a', fontSize: '0.9rem' }}>Resume downloaded as .docx</strong>
-                {!appAdded ? (
-                  <button
-                    className="btn btn-primary"
-                    style={{ padding: '5px 14px', fontSize: '0.82rem' }}
-                    onClick={handleAddToApplications}
-                    disabled={addingApp}
-                  >
-                    {addingApp ? 'Adding...' : '+ Add to Applications'}
+                {/* Action buttons */}
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <button className="btn btn-primary" onClick={handleDownloadTex} style={{ minWidth: 140 }}>
+                    Download .tex
                   </button>
-                ) : (
-                  <span style={{ fontSize: '0.82rem', color: '#16a34a', fontWeight: 500 }}>✓ Added to Applications</span>
+                  {pdfUrl && (
+                    <button className="btn btn-primary" onClick={handleDownloadPdf} style={{ minWidth: 140 }}>
+                      Download PDF
+                    </button>
+                  )}
+                  <button
+                    className="btn btn-success"
+                    onClick={handleEnhance}
+                    disabled={enhancing}
+                    style={{ minWidth: 180, background: '#7c3aed', borderColor: '#7c3aed' }}
+                  >
+                    {enhancing ? 'Adding keywords...' : 'Add Missing Keywords'}
+                  </button>
+                  <button className="btn btn-secondary" onClick={handleDiscard}>
+                    Discard
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={handleGenerateOutreach}
+                    disabled={generatingOutreach}
+                  >
+                    {generatingOutreach ? 'Generating...' : 'Generate Outreach'}
+                  </button>
+                </div>
+
+                {/* Enhancement results */}
+                {enhanceChanges && (
+                  <div style={{
+                    marginTop: 16, padding: '14px 18px', borderRadius: 10,
+                    background: '#faf5ff', border: '1px solid #d8b4fe'
+                  }}>
+                    <h4 style={{ margin: '0 0 8px 0', color: '#6b21a8', fontSize: '0.95rem' }}>
+                      Keywords Added ({(enhanceChanges.addedSkills?.length || 0) + (enhanceChanges.newBullets?.length || 0)})
+                    </h4>
+                    {enhanceChanges.addedSkills?.length > 0 && (
+                      <div style={{ marginBottom: 8 }}>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7c3aed', marginBottom: 4 }}>Skills added:</div>
+                        {enhanceChanges.addedSkills.map((s, i) => (
+                          <div key={i} style={{ fontSize: '0.82rem', color: '#374151', marginBottom: 2 }}>
+                            <span style={{ fontWeight: 600 }}>+ {s.skill}</span>
+                            <span style={{ color: '#888' }}> — {s.location}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {enhanceChanges.newBullets?.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#7c3aed', marginBottom: 4 }}>New bullets:</div>
+                        {enhanceChanges.newBullets.map((b, i) => (
+                          <div key={i} style={{ fontSize: '0.82rem', color: '#374151', marginBottom: 2 }}>
+                            <span style={{ fontWeight: 600 }}>{b.role}:</span> "{b.bullet}"
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+              </div>
+              <div style={{ flex: '1 1 400px', minWidth: 360 }}>
+                {compiling && (
+                  <div style={{
+                    padding: '40px 20px', textAlign: 'center', background: '#f8fafc',
+                    border: '2px dashed #e2e8f0', borderRadius: 10, color: '#888', fontSize: '0.85rem'
+                  }}>
+                    Compiling preview...
+                  </div>
+                )}
+                {pdfUrl && (
+                  <div style={{
+                    border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
+                  }}>
+                    <div style={{
+                      padding: '8px 14px', background: '#f1f5f9', borderBottom: '1px solid #e2e8f0',
+                      fontSize: '0.78rem', color: '#666', display: 'flex', justifyContent: 'space-between'
+                    }}>
+                      <span>Preview</span>
+                      <span>{texFilename}</span>
+                    </div>
+                    <iframe
+                      src={pdfUrl}
+                      title="Resume preview"
+                      style={{ width: '100%', height: 600, border: 'none' }}
+                    />
+                  </div>
+                )}
+                {!compiling && !pdfUrl && changeList && (
+                  <div style={{
+                    padding: '40px 20px', textAlign: 'center', background: '#f8fafc',
+                    border: '2px dashed #e2e8f0', borderRadius: 10, color: '#888', fontSize: '0.85rem'
+                  }}>
+                    PDF preview unavailable — download the .tex to view locally.
+                  </div>
                 )}
               </div>
-              {changeLog.map((entry, i) => (
-                <div key={i} style={{ fontSize: '0.82rem', color: '#166534', marginBottom: 2 }}>• {entry}</div>
-              ))}
+            </div>
+          )}
+
+          {error && <div className="error-message" style={{ marginTop: 12 }}>{error}</div>}
+
+          {!changeList && !previewLoading && (
+            <div style={{
+              marginTop: 20, padding: '14px 18px', background: '#f8fafc', borderRadius: 8,
+              border: '1px solid #e2e8f0'
+            }}>
+              <h4 style={{ margin: '0 0 8px 0', fontSize: '0.9rem', color: '#374151' }}>
+                How it works
+              </h4>
+              <ol style={{ margin: 0, paddingLeft: 18, fontSize: '0.82rem', color: '#555', lineHeight: 1.7 }}>
+                <li>AI reads your master resume (server/templates/main.tex)</li>
+                <li>Cross-references against the JD and ATS feedback</li>
+                <li>Removes low-relevance bullets, prunes irrelevant skills, trims per role</li>
+                <li>Reviews the proposed removals</li>
+                <li>Compiles and shows the PDF preview inline</li>
+              </ol>
             </div>
           )}
         </div>

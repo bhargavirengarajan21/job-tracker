@@ -452,6 +452,78 @@ async function extractTextFromFile(filePath, originalName) {
   throw new Error('Unsupported file format');
 }
 
+// --- LaTeX text extraction for ATS scoring (strips commands, keeps content) ---
+
+function extractTextFromTex(texContent) {
+  // Strip everything before \begin{document} and after \end{document}
+  let text = texContent;
+  const docStart = text.indexOf('\\begin{document}');
+  const docEnd = text.indexOf('\\end{document}');
+  if (docStart !== -1) text = text.substring(docStart + '\\begin{document}'.length);
+  if (docEnd !== -1) text = text.substring(0, text.indexOf('\\end{document}'));
+
+  // Resolve LaTeX escape sequences BEFORE comment stripping
+  // \% → literal %, \& → literal &, \_ → literal _, \$ → literal $
+  text = text.replace(/\\%/g, '§PERCENT§');
+  text = text.replace(/\\&/g, '§AMPERSAND§');
+  text = text.replace(/\\_/g, '§UNDERSCORE§');
+  text = text.replace(/\\\$/g, '§DOLLAR§');
+  text = text.replace(/\\#/g, '§HASH§');
+
+  // Strip comments
+  text = text.replace(/%.*/gm, '');
+
+  // Extract structured resume content FIRST (before generic stripping)
+  // resumeSubheading{Company}{Location}{Title}{Dates}
+  text = text.replace(/\\resumeSubheading\{([^}]*)\}\{([^}]*)\}\{([^}]*)\}\{([^}]*)\}/gi, '\n$3 at $1 — $4\n');
+  // resumeProjectHeading{Name}{Date}
+  text = text.replace(/\\resumeProjectHeading\{([^{}]*)\}\{[^}]*\}/gi, '\n$1\n');
+  // resumeItem{content} — the main bullet content
+  text = text.replace(/\\resumeItem\{([^{}]*)\}/gi, '• $1\n');
+  // resumeSubItem{content}
+  text = text.replace(/\\resumeSubItem\{([^{}]*)\}/gi, '• $1\n');
+  // Sections
+  text = text.replace(/\\section\*?\{([^}]*)\}/gi, '\n=== $1 ===\n');
+  text = text.replace(/\\subsection\*?\{([^}]*)\}/gi, '\n--- $1 ---\n');
+
+  // Strip formatting commands but keep content
+  text = text.replace(/\\textbf\{([^{}]*)\}/gi, '$1');
+  text = text.replace(/\\textit\{([^{}]*)\}/gi, '$1');
+  text = text.replace(/\\emph\{([^{}]*)\}/gi, '$1');
+  text = text.replace(/\\href\{[^}]*\}\{([^{}]*)\}/gi, '$1');
+  text = text.replace(/\\underline\{([^{}]*)\}/gi, '$1');
+
+  // Strip remaining commands with single-level braces
+  text = text.replace(/\\[a-zA-Z]+\{([^{}]*)\}/gi, '$1');
+
+  // Strip standalone commands (no braces)
+  text = text.replace(/\\[a-zA-Z]+/gi, '');
+
+  // Strip LaTeX line breaks and stray backslashes
+  text = text.replace(/\\\\/g, '\n');
+  text = text.replace(/\\[^a-zA-Z]/g, ' ');
+
+  // Strip preamble leftovers that may leak through
+  text = text.replace(/\[[^\]]*\]/g, ' ');
+
+  // Clean up symbols
+  text = text.replace(/[{}$&~^_]/g, ' ');
+  text = text.replace(/\\times/gi, 'x');
+
+  // Restore escaped characters
+  text = text.replace(/§PERCENT§/g, '%');
+  text = text.replace(/§AMPERSAND§/g, '&');
+  text = text.replace(/§UNDERSCORE§/g, '_');
+  text = text.replace(/§DOLLAR§/g, '$');
+  text = text.replace(/§HASH§/g, '#');
+
+  // Collapse whitespace
+  text = text.replace(/[ \t]+/g, ' ');
+  text = text.replace(/\n\s*\n/g, '\n\n');
+  text = text.trim();
+  return text;
+}
+
 // --- Recruiter 6-second screen ---
 
 async function recruiterScreen(resumeText, jobDescription) {
@@ -464,6 +536,8 @@ async function recruiterScreen(resumeText, jobDescription) {
     messages: [{
       role: 'user',
       content: `You are a brutally honest, extremely picky tech recruiter AND a professional resume editor. Scrutinize EVERY line in this resume against this specific job.
+
+IMPORTANT: This resume text was extracted from a LaTeX (.tex) source file for analysis purposes. The original PDF is professionally formatted. Do NOT flag any formatting issues (spacing, alignment, fonts, bullet styles, visual design) — they are artifacts of text extraction, not real problems. Focus ONLY on content: relevance, impact, keywords, completeness, and wording quality.
 
 Use these skill guides as your expert knowledge. The recruiter-skills guide is your PRIMARY evaluation methodology — apply its criteria (evidence-based reading, exact tech-stack frequency analysis, "never infer missing information — state 'not evidenced'", exact-phrase keyword matching where synonyms don't count):
 <skill name="recruiter-skills">
@@ -490,13 +564,11 @@ CRITICAL: Return ONLY valid JSON. No markdown, no backticks. Keep "line" values 
   "educationMatch": {"score": 1, "comment": "..."},
   "impactCheck": {"score": 1, "comment": "..."},
   "readability": {"score": 1, "comment": "..."},
-  "formattingScore": {"score": 1, "comment": "Overall formatting and visual design assessment"},
+  "formattingScore": {"score": 5, "comment": "LaTeX-managed — professionally formatted"},
   "grammarErrors": [
     {"text": "Exact text with error", "issue": "What's wrong", "fix": "Corrected version"}
   ],
-  "formattingIssues": [
-    {"issue": "Description of formatting/spacing/design problem", "location": "Where in resume", "fix": "How to fix it"}
-  ],
+  "formattingIssues": [],
   "lineByLineAudit": [
     {"line": "Short excerpt...", "relevance": "high|medium|low|none", "verdict": "keep|rewrite|remove", "reason": "One sentence."}
   ],
@@ -635,9 +707,18 @@ router.post('/score', authenticateToken, upload.single('resume'), async (req, re
   try {
     const { jobDescription } = req.body;
     if (!jobDescription) return res.status(400).json({ error: 'Job description is required' });
-    if (!req.file) return res.status(400).json({ error: 'Resume file is required' });
 
-    const resumeText = await extractTextFromFile(req.file.path, req.file.originalname);
+    let resumeText;
+    if (req.file) {
+      resumeText = await extractTextFromFile(req.file.path, req.file.originalname);
+    } else {
+      const masterTexPath = path.join(__dirname, 'templates', 'main.tex');
+      if (!fs.existsSync(masterTexPath)) {
+        return res.status(400).json({ error: 'No resume uploaded and master resume not found' });
+      }
+      const texContent = fs.readFileSync(masterTexPath, 'utf-8');
+      resumeText = extractTextFromTex(texContent);
+    }
 
     let atsResult, keywordSource;
     try {
@@ -661,20 +742,16 @@ router.post('/score', authenticateToken, upload.single('resume'), async (req, re
       return null;
     });
 
-    fs.unlinkSync(req.file.path);
+    if (req.file) fs.unlinkSync(req.file.path);
 
-    // A strict/original ATS credits ONLY literal hits, so anything you merely demonstrate
-    // (the exact JD phrase — e.g. "take ownership" — is absent) is genuinely missing to that
-    // ATS. Surface those verbatim JD phrases in the Missing list too, not just the Demonstrated
-    // section, so the exact term gets flagged and added. (Sets are disjoint — no duplicates.)
     const missingWithDemonstrated = [...atsResult.missing, ...atsResult.demonstratedMissing];
 
     res.json({
-      score: atsResult.overallScore,               // strict / original ATS (literal only)
-      demonstratedScore: atsResult.demonstratedScore, // literal + implied evidence
-      matchedKeywords: atsResult.matched,          // literal hits only
-      demonstratedMissing: atsResult.demonstratedMissing, // implied — keyword absent, add it
-      missingKeywords: missingWithDemonstrated,    // fully-missing + demonstrated-but-literal-missing
+      score: atsResult.overallScore,
+      demonstratedScore: atsResult.demonstratedScore,
+      matchedKeywords: atsResult.matched,
+      demonstratedMissing: atsResult.demonstratedMissing,
+      missingKeywords: missingWithDemonstrated,
       categoryScores: atsResult.categoryScores,
       requiredMissing: atsResult.requiredMissing,
       autoReject: atsResult.autoReject,
@@ -766,9 +843,13 @@ function extractTextFromHtml(html) {
 
 // --- Quick formatting glitch detection (lightweight, Haiku) ---
 
-async function quickFormattingCheck(resumeText) {
+async function quickFormattingCheck(resumeText, isTexSource) {
   const client = getAnthropicClient();
   if (!client) return [];
+
+  // Skip formatting check for .tex-sourced text — the compiled PDF is properly formatted.
+  // This check only makes sense for uploaded DOCX/PDF where formatting issues are real.
+  if (isTexSource) return [];
 
   try {
     const message = await client.messages.create({
@@ -1499,6 +1580,604 @@ router.post('/download-resume', authenticateToken, async (req, res) => {
     res.send(buffer);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// --- LaTeX-based resume tailoring (removal-only, no rewording) ---
+
+const VERB_BANK = `| Category | Verbs |
+| --- | --- |
+| Communication | Addressed, Collaborated, Resolved |
+| Creative | Created, Designed, Developed, Published, Integrated |
+| Leadership | Advocated, Contributed, Demonstrated, Launched, Volunteered, Led |
+| Management | Accelerated, Accomplished, Achieved, Emphasized, Enforced, Exceeded, Expanded, Coordinated, Implemented, Improved, Initiated, Managed, Refactored, Reviewed, Streamlined |
+| Technical | Maintained, Adapted, Built, Fortified, Rectified, Revamped, Standardized, Upgraded |
+| Organization | Monitored, Validated, Verified, Compiled |
+| Research | Identified, Evaluated, Diagnosed, Assessed, Determined, Explored, Investigated, Measured, Solved, Tested |`;
+
+async function tailorTexWithAI(texContent, jobDescription, atsContext) {
+  const client = getAnthropicClient();
+  if (!client) return null;
+
+  const message = await client.messages.create({
+    model: 'claude-opus-4-8',
+    max_tokens: 16000,
+    messages: [{
+      role: 'user',
+      content: `You are tailoring a LaTeX resume to a specific job. You have the master .tex file, the job description, and ATS feedback. FOLLOW THESE RULES EXACTLY.
+
+NON-NEGOTIABLE RULES:
+- REMOVAL IS THE ONLY OPERATION. Never reword, rephrase, merge, shorten, add to, reorder, or edit any bullet or skill. Take each one verbatim from the master and either KEEP it exactly or DELETE it.
+- NO TRIMMING. Do not cut bullets short, do not remove sentences from bullets, do not shorten anything. Every bullet stays exactly as written or gets deleted whole.
+- Zero fabrication. Every bullet, number, and skill must exist in the master.
+- Header facts (name, contact, education, dates) are fixed. Do not alter them.
+- Keep true numbers intact. Never inflate or drop real numbers.
+- Target length: 1.5 pages max. This is strict — the compiled PDF must NOT exceed 1.5 pages.
+
+STEP 1 — Apply ATS feedback to cut lines:
+- DEFAULT: KEEP every bullet. Only remove a bullet if ALL of the following are true:
+  (a) The ATS flagged it for removal (relevance="none" AND verdict="remove"), AND
+  (b) The bullet shares ZERO words or concepts with the JD (not a single tech term, verb, or domain word).
+- If a bullet contains even ONE word that matches the JD (a tech skill, an action verb, a domain term, a tool name), KEEP it — do NOT remove it.
+- Lines flagged relevance="medium" or verdict="rewrite" should be KEPT, not removed — medium relevance still means it has some JD overlap.
+- When in doubt between cutting and keeping, ALWAYS KEEP. Over-removing hurts more than under-removing.
+
+STEP 2 — Prune the skills section:
+- REMOVE any skill, tool, or technology that has ZERO relevance to the JD — if the JD never mentions it, never implies it, and it has no connection to the role's domain, delete it from the skills line.
+- Keep surviving entries exactly as written in the master.
+- Never add a skill not already in the master.
+
+STEP 2b — Prune the projects section:
+- Remove any project whose tech stack or domain has ZERO overlap with the JD.
+- A project stays only if at least ONE of its technologies, tools, or concepts appears in or is directly relevant to the JD.
+- Keep surviving projects exactly as written in the master.
+- Maximum 3 projects — if more than 3 qualify, keep the 3 most relevant to the JD.
+
+STEP 3 — Enforce bullet count targets per role to fit 1.5 pages:
+After applying Steps 1-2, if the resume still exceeds 1.5 pages, trim bullets per role using these targets:
+- Most recent role (Rocket Mortgage): MAX 7 bullets. Keep the most JD-relevant ones.
+- Second role (Mr. Cooper SDE II): MAX 5 bullets.
+- Third role (Mr. Cooper SDE I): MAX 3 bullets.
+- When choosing which bullets to keep within a role, prioritize bullets that:
+  (a) Match JD keywords or required skills
+  (b) Have quantified metrics (numbers, percentages)
+  (c) Demonstrate transferable skills relevant to the target role
+  (d) Use action verbs from the JD's responsibility descriptions
+- Keep survivors in their MASTER ORDER (no reordering).
+
+STEP 4 — Verify the output fits 1.5 pages:
+- Count the total bullets remaining. If over 20 total bullets, trim further.
+- The skills section should be 3-5 lines max (pruned to JD-relevant items only).
+- Projects section: max 3 projects, 1 bullet each.
+- If still too long, remove the lowest-priority bullets from the oldest role first.
+
+TRANSFERABLE SKILLS CONTEXT:
+The following skills from the candidate's experience transfer to this role even if not exact keyword matches. KEEP bullets that demonstrate these:
+${JSON.stringify(atsContext.transferableSkills || [])}
+
+RETURN: The complete modified .tex file content AND a JSON change list. The .tex must be compilable LaTeX. Output format:
+
+---TEX_START---
+[the complete modified .tex file content]
+---TEX_END---
+---JSON_START---
+{"changeList": [{"type": "removed_bullet|pruned_skill|trimmed_bullet", "content": "exact verbatim text from master", "reason": "why removed"}]}
+---JSON_END---
+
+JOB DESCRIPTION:
+${jobDescription.substring(0, 6000)}
+
+ATS FEEDBACK:
+Lines to remove: ${JSON.stringify(atsContext.linesToRemove || [])}
+Skills to remove: ${JSON.stringify(atsContext.skillsToRemove || [])}
+Missing required keywords: ${JSON.stringify((atsContext.missingRequired || []).map(k => k.keyword || k))}
+Missing preferred keywords: ${JSON.stringify((atsContext.missingPreferred || []).map(k => k.keyword || k))}
+
+MASTER .TEX FILE:
+${texContent}`
+    }]
+  });
+
+  const raw = message.content[0].text;
+  const texMatch = raw.match(/---TEX_START---([\s\S]*?)---TEX_END---/);
+  const jsonMatch = raw.match(/---JSON_START---([\s\S]*?)---JSON_END---/);
+
+  if (!texMatch) return null;
+
+  let tailoredTex = texMatch[1].trim();
+  let changeList = [];
+
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[1].trim());
+      changeList = Array.isArray(parsed.changeList) ? parsed.changeList : [];
+    } catch { /* ignore parse error */ }
+  }
+
+  return { tailoredTex, changeList };
+}
+
+router.post('/preview-tex', authenticateToken, async (req, res) => {
+  try {
+    const { jobDescription, company, position, linesToRemove, skillsToRemove, missingRequired, missingPreferred, transferableSkills } = req.body;
+    if (!jobDescription) return res.status(400).json({ error: 'Job description is required' });
+
+    const masterTexPath = path.join(__dirname, 'templates', 'main.tex');
+    if (!fs.existsSync(masterTexPath)) {
+      return res.status(400).json({ error: 'Master resume (main.tex) not found' });
+    }
+    const texContent = fs.readFileSync(masterTexPath, 'utf-8');
+
+    const atsContext = {
+      linesToRemove: linesToRemove || [],
+      skillsToRemove: skillsToRemove || [],
+      missingRequired: missingRequired || [],
+      missingPreferred: missingPreferred || [],
+      transferableSkills: transferableSkills || [],
+      company,
+      position
+    };
+
+    const result = await tailorTexWithAI(texContent, jobDescription, atsContext);
+    if (!result) return res.status(500).json({ error: 'AI tailoring failed' });
+
+// --- Keyword enhancement: naturally weave missing skills into the tailored resume ---
+// SEPARATE from the removal-only tailoring. This function adds missing keywords
+// ONLY where it's natural and relevant — never forced.
+
+async function enhanceWithKeywords(texContent, jobDescription, missingKeywords) {
+  const client = getAnthropicClient();
+  if (!client) return null;
+
+  const message = await client.messages.create({
+    model: 'claude-opus-4-8',
+    max_tokens: 16000,
+    messages: [{
+      role: 'user',
+      content: `You are enhancing a tailored LaTeX resume by naturally incorporating missing keywords from a job description. This is an ADDITION-ONLY pass — you may add skills and weave keywords into existing bullets, but you must NEVER remove, delete, or shorten any existing content.
+
+CRITICAL CONSTRAINT: The resume MUST NOT exceed 1.5 pages. Do not add content that would push it beyond 1.5 pages. Prefer adding to the skills section (compact) over adding new bullets (expands page count).
+
+MISSING KEYWORDS TO INCORPORATE:
+${JSON.stringify(missingKeywords, null, 2)}
+
+RULES — READ CAREFULLY:
+1. For each missing keyword, decide: IS there a natural place for it? If yes, add it. If no, skip it. Never force a keyword where it doesn't belong.
+2. NATURAL PLACEMENT (in order of preference):
+   a. Skills section: If the keyword is a concrete tech/tool/framework the candidate plausibly knows, add it to the appropriate comma-separated skills line (e.g. add "Terraform" to the Cloud & DevOps line). Keep the existing format — just append with a comma.
+   b. Weave into existing bullet: If a bullet already discusses work that logically involves this keyword, add the keyword naturally into that bullet's text. Example: a bullet about "deploying services" could naturally mention "Docker" or "Kubernetes". A bullet about "event pipelines" could naturally mention "Kafka". The keyword must fit the context — don't shoehorn it.
+   c. New bullet (last resort): Only if the keyword is critical (required by JD) AND there's genuine scope to mention it as a real project/experience the candidate has AND the resume is under 1.2 pages (room to grow). Write ONE short bullet (under 20 words) that sounds like a real accomplishment, not a keyword list. Place it in the most relevant role.
+3. NEVER:
+   - Add a keyword to a bullet that has nothing to do with it
+   - Invent metrics, numbers, or scope that isn't implied
+   - Add more than 1 new bullet per role
+   - Add keywords that are soft skills (leadership, communication) — only hard skills, tools, frameworks, technologies
+   - Touch the header, education, or project sections
+   - Push the resume beyond 1.5 pages
+4. QUALITY CHECK: After making changes, read each modified bullet. Does it sound like something a real engineer would write? If it sounds forced, undo the change.
+
+RETURN: The complete modified .tex file AND a JSON list of changes. Output format:
+
+---TEX_START---
+[the complete modified .tex file content]
+---TEX_END---
+---JSON_START---
+{"addedSkills": [{"skill": "keyword added", "location": "skills line or bullet excerpt"}], "newBullets": [{"role": "company name", "bullet": "exact new bullet text"}]}
+---JSON_END---
+
+TAILORED .TEX FILE:
+${texContent}
+
+JOB DESCRIPTION:
+${jobDescription.substring(0, 6000)}`
+    }]
+  });
+
+  const raw = message.content[0].text;
+  const texMatch = raw.match(/---TEX_START---([\s\S]*?)---TEX_END---/);
+  const jsonMatch = raw.match(/---JSON_START---([\s\S]*?)---JSON_END---/);
+
+  if (!texMatch) return null;
+
+  let enhancedTex = texMatch[1].trim();
+  let changes = { addedSkills: [], newBullets: [] };
+
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[1].trim());
+      changes.addedSkills = parsed.addedSkills || [];
+      changes.newBullets = parsed.newBullets || [];
+    } catch { /* ignore parse error */ }
+  }
+
+  return { enhancedTex, changes };
+}
+
+// POST /ats/enhance-tex — add missing keywords naturally to a tailored .tex
+router.post('/enhance-tex', authenticateToken, async (req, res) => {
+  try {
+    const { texContent, jobDescription, missingRequired, missingPreferred } = req.body;
+    if (!texContent || !jobDescription) {
+      return res.status(400).json({ error: 'texContent and jobDescription are required' });
+    }
+
+    const allMissing = [
+      ...(missingRequired || []).map(k => ({ keyword: k.keyword || k, priority: 'required' })),
+      ...(missingPreferred || []).map(k => ({ keyword: k.keyword || k, priority: 'preferred' })),
+    ];
+
+    if (allMissing.length === 0) {
+      return res.json({ enhancedTex: texContent, changes: { addedSkills: [], newBullets: [] }, message: 'No missing keywords to add' });
+    }
+
+    const result = await enhanceWithKeywords(texContent, jobDescription, allMissing);
+    if (!result) return res.status(500).json({ error: 'Enhancement failed' });
+
+    // Score the enhanced resume to show improvement
+    const enhancedText = extractTextFromTex(result.enhancedTex);
+    let newScore;
+    try {
+      const atsKeywords = await extractATSKeywords(jobDescription);
+      if (atsKeywords) {
+        const atsResult = atsScore(enhancedText, atsKeywords);
+        newScore = { score: atsResult.overallScore, demonstratedScore: atsResult.demonstratedScore };
+      }
+    } catch {}
+
+    res.json({
+      enhancedTex: result.enhancedTex,
+      changes: result.changes,
+      newScore: newScore || null,
+    });
+  } catch (err) {
+    console.error('Enhance-tex failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+    const filename = [company, position, 'resume'].filter(Boolean).join('_').replace(/[^a-z0-9_\-]/gi, '_') || 'tailored_resume';
+
+    res.json({
+      tailoredTex: result.tailoredTex,
+      changeList: result.changeList,
+      filename: `${filename}.tex`,
+      summary: {
+        removed: result.changeList.filter(c => c.type.includes('removed')).length,
+        pruned: result.changeList.filter(c => c.type.includes('pruned')).length,
+        trimmed: result.changeList.filter(c => c.type.includes('trimmed')).length,
+      }
+    });
+  } catch (err) {
+    console.error('Preview-tex failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /ats/compile-tex — compile a .tex string to PDF, return the PDF buffer
+const { execSync } = require('child_process');
+const PDFLATEX = (() => {
+  const candidates = [
+    'pdflatex',
+    'C:\\Program Files\\MiKTeX\\miktex\\bin\\x64\\pdflatex.exe',
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'MiKTeX', 'miktex', 'bin', 'x64', 'pdflatex.exe'),
+  ];
+  for (const c of candidates) {
+    try { execSync(`"${c}" --version`, { stdio: 'ignore', timeout: 5000 }); return c; } catch {}
+  }
+  return null;
+})();
+
+// POST /ats/score-tailored — score a tailored .tex against the JD (for before/after comparison)
+router.post('/score-tailored', authenticateToken, async (req, res) => {
+  try {
+    const { texContent, jobDescription } = req.body;
+    if (!texContent || !jobDescription) {
+      return res.status(400).json({ error: 'texContent and jobDescription are required' });
+    }
+
+    const resumeText = extractTextFromTex(texContent);
+
+    let atsResult;
+    try {
+      const atsKeywords = await extractATSKeywords(jobDescription);
+      if (atsKeywords) {
+        atsResult = atsScore(resumeText, atsKeywords);
+      }
+    } catch (err) {
+      console.error('AI ATS extraction for tailored score failed:', err.message);
+    }
+
+    if (!atsResult) {
+      const keywords = extractKeywordsFallback(jobDescription);
+      atsResult = fallbackScore(resumeText, keywords);
+    }
+
+    res.json({
+      score: atsResult.overallScore,
+      demonstratedScore: atsResult.demonstratedScore,
+      matchedKeywords: atsResult.matched,
+      missingKeywords: [...atsResult.missing, ...atsResult.demonstratedMissing],
+      categoryScores: atsResult.categoryScores,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/compile-tex', authenticateToken, async (req, res) => {
+  if (!PDFLATEX) return res.status(500).json({ error: 'pdflatex not installed — cannot compile preview' });
+
+  const { texContent, filename } = req.body;
+  if (!texContent) return res.status(400).json({ error: 'No .tex content provided' });
+
+  const tmpDir = path.join(__dirname, 'uploads');
+  const base = `preview_${Date.now()}`;
+  const tmpTex = path.join(tmpDir, `${base}.tex`);
+
+  try {
+    fs.writeFileSync(tmpTex, texContent, 'utf-8');
+
+    // Run pdflatex twice (for refs/outlines), suppress auto-open dialogs
+    const opts = { timeout: 60000, windowsHide: true, cwd: tmpDir, stdio: 'ignore' };
+    execSync(`"${PDFLATEX}" -interaction=nonstopmode "${tmpTex}"`, opts);
+    execSync(`"${PDFLATEX}" -interaction=nonstopmode "${tmpTex}"`, opts);
+
+    const tmpPdf = path.join(tmpDir, `${base}.pdf`);
+    if (!fs.existsSync(tmpPdf)) {
+      return res.status(500).json({ error: 'pdflatex produced no output — check for LaTeX errors' });
+    }
+
+    const pdfBuffer = fs.readFileSync(tmpPdf);
+    // Cleanup
+    ['.tex', '.pdf', '.aux', '.log', '.out'].forEach(ext => {
+      try { fs.unlinkSync(path.join(tmpDir, `${base}${ext}`)); } catch {}
+    });
+
+    const safeName = (filename || 'resume').replace(/[^a-zA-Z0-9_\-]/g, '_');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${safeName}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (err) {
+    // Cleanup on failure
+    ['.tex', '.pdf', '.aux', '.log', '.out'].forEach(ext => {
+      try { fs.unlinkSync(path.join(tmpDir, `${base}${ext}`)); } catch {}
+    });
+    console.error('Compile-tex failed:', err.message);
+    res.status(500).json({ error: `LaTeX compilation failed: ${err.message}` });
+  }
+});
+
+// --- SSE streaming endpoint: ATS score + recruiter screen + background resume gen ---
+// Sends real-time progress events so the user is never staring at a blank screen.
+
+router.post('/score-stream', authenticateToken, upload.single('resume'), async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  const send = (event, data) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  const sendStep = (name, status) => send('step', { name, status });
+
+  try {
+    const { jobDescription } = req.body;
+    if (!jobDescription) { send('error', { error: 'Job description is required' }); return res.end(); }
+
+    // Step 1: Extract resume text
+    sendStep('Extracting resume text...', 'running');
+    let resumeText;
+    if (req.file) {
+      resumeText = await extractTextFromFile(req.file.path, req.file.originalname);
+    } else {
+      const masterTexPath = path.join(__dirname, 'templates', 'main.tex');
+      if (!fs.existsSync(masterTexPath)) {
+        send('error', { error: 'No resume uploaded and master resume not found' });
+        return res.end();
+      }
+      const texContent = fs.readFileSync(masterTexPath, 'utf-8');
+      resumeText = extractTextFromTex(texContent);
+    }
+    sendStep('Extracting resume text...', 'done');
+
+    // Step 2: Extract ATS keywords
+    sendStep('Analyzing job description keywords...', 'running');
+    let atsResult, keywordSource;
+    try {
+      const atsKeywords = await extractATSKeywords(jobDescription);
+      if (atsKeywords) {
+        atsResult = atsScore(resumeText, atsKeywords);
+        keywordSource = 'ai';
+      }
+    } catch (err) {
+      console.error('AI ATS extraction failed:', err.message);
+    }
+    if (!atsResult) {
+      const keywords = extractKeywordsFallback(jobDescription);
+      atsResult = fallbackScore(resumeText, keywords);
+      keywordSource = 'fallback';
+    }
+    sendStep('Analyzing job description keywords...', 'done');
+
+    // Step 3: Score resume
+    sendStep('Scoring resume against keywords...', 'running');
+    const missingWithDemonstrated = [...atsResult.missing, ...atsResult.demonstratedMissing];
+    const atsPayload = {
+      score: atsResult.overallScore,
+      demonstratedScore: atsResult.demonstratedScore,
+      matchedKeywords: atsResult.matched,
+      demonstratedMissing: atsResult.demonstratedMissing,
+      missingKeywords: missingWithDemonstrated,
+      categoryScores: atsResult.categoryScores,
+      requiredMissing: atsResult.requiredMissing,
+      autoReject: atsResult.autoReject,
+      totalKeywords: atsResult.matched.length + atsResult.demonstratedMissing.length + atsResult.missing.length,
+      keywordSource,
+    };
+    sendStep('Scoring resume against keywords...', 'done');
+
+    // Step 4: Recruiter screen (biggest time sink — stream progress)
+    sendStep('Running recruiter screen...', 'running');
+    const recruiterResult = await recruiterScreen(resumeText, jobDescription).catch(err => {
+      console.error('Recruiter screening failed:', err.message);
+      return null;
+    });
+    sendStep('Running recruiter screen...', 'done');
+
+    // Step 4b: Identify transferable skills — skills from experience that map to JD requirements
+    sendStep('Identifying transferable skills...', 'running');
+    let transferableSkills = [];
+    try {
+      const tsClient = getAnthropicClient();
+      if (tsClient) {
+        const tsMessage = await tsClient.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 2048,
+          messages: [{
+            role: 'user',
+            content: `You are an ATS analyst. Identify TRANSFERABLE SKILLS in this resume — skills the candidate has demonstrated through their work that are relevant to the target role even if they are not exact keyword matches in the JD.
+
+Transferable skills are inferred from context: e.g., "event-driven architecture" experience transfers to "real-time data processing"; "CI/CD pipeline" transfers to "DevOps"; "component library" transfers to "design systems".
+
+Return ONLY valid JSON (no markdown):
+{"transferable": [{"skill": "transferable skill name", "evidence": "resume line proving it", "mapsTo": "JD requirement it addresses"}]}
+
+Focus on 5-10 high-value transferable mappings. Only include mappings where there is genuine evidence in the resume.
+
+RESUME:
+${resumeText.substring(0, 5000)}
+
+JOB DESCRIPTION:
+${jobDescription.substring(0, 4000)}`
+          }]
+        });
+        const tsText = tsMessage.content[0].text;
+        const tsMatch = tsText.match(/\{[\s\S]*\}/);
+        if (tsMatch) {
+          try {
+            const parsed = JSON.parse(tsMatch[0]);
+            transferableSkills = Array.isArray(parsed.transferable) ? parsed.transferable : [];
+          } catch {}
+        }
+      }
+    } catch (err) {
+      console.error('Transferable skills identification failed:', err.message);
+    }
+    sendStep('Identifying transferable skills...', 'done');
+
+    // Clean up uploaded file
+    if (req.file) fs.unlinkSync(req.file.path);
+
+    // Send the full ATS + recruiter result + transferable skills
+    send('ats-result', { ...atsPayload, recruiterScreen: recruiterResult, transferableSkills });
+
+    // Step 5: Fire background resume generation — stream its progress
+    sendStep('Generating tailored resume...', 'running');
+    let preloadedResume = null;
+    try {
+      const masterTexPath = path.join(__dirname, 'templates', 'main.tex');
+      if (fs.existsSync(masterTexPath)) {
+        const texContent = fs.readFileSync(masterTexPath, 'utf-8');
+        const atsContext = {
+          linesToRemove: (recruiterResult?.lineByLineAudit || [])
+            .filter(l => l.verdict === 'remove' || l.relevance === 'none')
+            .map(l => l.line)
+            .concat(recruiterResult?.removeToSaveSpace || []),
+          skillsToRemove: (recruiterResult?.irrelevantSkills || []).map(s => s.skill || s).filter(Boolean),
+          missingRequired: atsResult.requiredMissing || [],
+          missingPreferred: atsResult.missing.filter(k => k.priority === 'preferred'),
+          transferableSkills,
+          company: req.body.company || '',
+          position: req.body.position || '',
+        };
+
+        sendStep('AI tailoring master resume...', 'running');
+        const texResult = await tailorTexWithAI(texContent, jobDescription, atsContext);
+        sendStep('AI tailoring master resume...', 'done');
+
+        if (texResult) {
+          preloadedResume = {
+            tailoredTex: texResult.tailoredTex,
+            changeList: texResult.changeList,
+            filename: [atsContext.company, atsContext.position, 'resume'].filter(Boolean).join('_').replace(/[^a-z0-9_\-]/gi, '_') + '.tex',
+            summary: {
+              removed: texResult.changeList.filter(c => c.type.includes('removed')).length,
+              pruned: texResult.changeList.filter(c => c.type.includes('pruned')).length,
+              trimmed: texResult.changeList.filter(c => c.type.includes('trimmed')).length,
+            }
+          };
+
+          // Step 6: Compile PDF + score in parallel, stream progress
+          sendStep('Compiling PDF preview...', 'running');
+          sendStep('Scoring tailored resume...', 'running');
+
+          const [pdfResult, scoreResult] = await Promise.allSettled([
+            (async () => {
+              if (!PDFLATEX) return null;
+              const tmpDir = path.join(__dirname, 'uploads');
+              const base = `stream_${Date.now()}`;
+              const tmpTex = path.join(tmpDir, `${base}.tex`);
+              fs.writeFileSync(tmpTex, texResult.tailoredTex, 'utf-8');
+              const opts = { timeout: 60000, windowsHide: true, cwd: tmpDir, stdio: 'ignore' };
+              try {
+                execSync(`"${PDFLATEX}" -interaction=nonstopmode "${tmpTex}"`, opts);
+                execSync(`"${PDFLATEX}" -interaction=nonstopmode "${tmpTex}"`, opts);
+                const tmpPdf = path.join(tmpDir, `${base}.pdf`);
+                if (!fs.existsSync(tmpPdf)) return null;
+                const buf = fs.readFileSync(tmpPdf);
+                ['.tex', '.pdf', '.aux', '.log', '.out'].forEach(ext => {
+                  try { fs.unlinkSync(path.join(tmpDir, `${base}${ext}`)); } catch {}
+                });
+                return buf.toString('base64');
+              } catch {
+                ['.tex', '.pdf', '.aux', '.log', '.out'].forEach(ext => {
+                  try { fs.unlinkSync(path.join(tmpDir, `${base}${ext}`)); } catch {}
+                });
+                return null;
+              }
+            })(),
+            (async () => {
+              const resumeText2 = extractTextFromTex(texResult.tailoredTex);
+              let atsResult2;
+              try {
+                const atsKeywords2 = await extractATSKeywords(jobDescription);
+                if (atsKeywords2) atsResult2 = atsScore(resumeText2, atsKeywords2);
+              } catch {}
+              if (!atsResult2) {
+                const kws = extractKeywordsFallback(jobDescription);
+                atsResult2 = fallbackScore(resumeText2, kws);
+              }
+              return { score: atsResult2.overallScore, demonstratedScore: atsResult2.demonstratedScore };
+            })()
+          ]);
+
+          if (pdfResult.status === 'fulfilled' && pdfResult.value) {
+            preloadedResume.pdfBase64 = pdfResult.value;
+          }
+          if (scoreResult.status === 'fulfilled' && scoreResult.value) {
+            preloadedResume.tailoredScore = scoreResult.value.score;
+            preloadedResume.tailoredDemonstrated = scoreResult.value.demonstratedScore;
+          }
+
+          sendStep('Compiling PDF preview...', 'done');
+          sendStep('Scoring tailored resume...', 'done');
+        }
+      }
+    } catch (err) {
+      console.error('Background resume generation failed:', err.message);
+      sendStep('Generating tailored resume...', 'error');
+    }
+
+    sendStep('Generating tailored resume...', 'done');
+    send('resume-result', preloadedResume);
+    send('done', {});
+  } catch (err) {
+    send('error', { error: err.message });
+  } finally {
+    res.end();
   }
 });
 
